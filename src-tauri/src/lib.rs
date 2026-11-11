@@ -35,11 +35,11 @@ fn start_ticker(app: tauri::AppHandle) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let builder = platform::register(tauri::Builder::default());
-    let app = builder
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            let _ = window::create_or_focus(app, "report");
-        }))
+    // single-instance must be the first plugin registered.
+    let builder = tauri::Builder::default().plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        let _ = window::create_or_focus(app, "report");
+    }));
+    let app = platform::register(builder)
         .setup(|app| {
             let dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&dir)?;

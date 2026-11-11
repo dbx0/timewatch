@@ -14,7 +14,8 @@ pub const OVERLAY_LABEL: &str = "notch";
 /// Fixed overlay window size, logical px.
 pub const OVERLAY_W: f64 = 520.0;
 pub const OVERLAY_H: f64 = 640.0;
-pub const PILL_H: f64 = 32.0;
+/// Notch mode: extra pill width on each side of the notch (dot+project left, timer right).
+pub const PILL_EAR: f64 = 120.0;
 pub const STRIP_W: f64 = 160.0;
 pub const STRIP_H: f64 = 6.0;
 
@@ -42,7 +43,7 @@ pub struct OverlayLayout {
     pub mode: PillMode,
     pub pill_w: f64,
     pub pill_h: f64,
-    pub notch_width: Option<f64>,
+    pub notch: Option<NotchInfo>,
 }
 
 /// Payload of `overlay://config`.
@@ -51,11 +52,20 @@ pub struct OverlayLayout {
 pub struct OverlayConfig {
     pub mode: PillMode,
     pub notch_width: Option<f64>,
+    pub notch_height: Option<f64>,
+    pub pill_width: f64,
+    pub pill_height: f64,
 }
 
 impl From<&OverlayLayout> for OverlayConfig {
     fn from(l: &OverlayLayout) -> Self {
-        Self { mode: l.mode, notch_width: l.notch_width }
+        Self {
+            mode: l.mode,
+            notch_width: l.notch.map(|n| n.width),
+            notch_height: l.notch.map(|n| n.height),
+            pill_width: l.pill_w,
+            pill_height: l.pill_h,
+        }
     }
 }
 
@@ -83,9 +93,9 @@ pub fn overlay_frame(
     notch: Option<NotchInfo>,
 ) -> OverlayLayout {
     let offset_x = (monitor_size.0 / scale - OVERLAY_W) / 2.0;
-    let (mode, pill_w, pill_h, notch_width) = match notch {
-        Some(n) => (PillMode::Notch, n.width, PILL_H, Some(n.width)),
-        None => (PillMode::Strip, STRIP_W, STRIP_H, None),
+    let (mode, pill_w, pill_h) = match notch {
+        Some(n) => (PillMode::Notch, n.width + 2.0 * PILL_EAR, n.height),
+        None => (PillMode::Strip, STRIP_W, STRIP_H),
     };
     OverlayLayout {
         x: monitor_pos.0 / scale + offset_x,
@@ -98,7 +108,7 @@ pub fn overlay_frame(
         mode,
         pill_w,
         pill_h,
-        notch_width,
+        notch,
     }
 }
 
@@ -163,7 +173,7 @@ pub fn create_overlay(app: &AppHandle) -> Result<(), String> {
         .visible(false)
         .build()
         .map_err(|e| e.to_string())?;
-    win.set_ignore_cursor_events(true).map_err(|e| e.to_string())?;
+    platform::set_ignore_cursor_events(&win, true);
     platform::make_overlay(&win)?;
     reposition_overlay(app);
     platform::show_overlay(&win);
@@ -194,7 +204,7 @@ pub fn reposition_overlay(app: &AppHandle) {
     let cursor_scale = platform::cursor_scale(primary_scale, m.scale_factor());
     platform::position_overlay(&win, &layout);
     eprintln!(
-        "[overlay] monitor {:?} {}x{}@{} notch {:?} -> frame ({}, {}) {}x{} mode {:?}",
+        "[overlay] monitor {:?} {}x{}@{} notch {:?} -> frame ({}, {}) {}x{} mode {:?} pill {}x{}",
         m.name(),
         size.width,
         size.height,
@@ -204,7 +214,9 @@ pub fn reposition_overlay(app: &AppHandle) {
         layout.y,
         layout.w,
         layout.h,
-        layout.mode
+        layout.mode,
+        layout.pill_w,
+        layout.pill_h
     );
     if let Some(state) = app.try_state::<OverlayState>() {
         *state.layout.lock().unwrap_or_else(|p| p.into_inner()) = Some((layout, cursor_scale));
@@ -250,7 +262,7 @@ fn start_hover_poll(app: AppHandle) {
         let rect = *state.hit_rect.lock().unwrap_or_else(|p| p.into_inner());
         let inside = rect.is_some_and(|r| r.contains(rel_cursor((c.x, c.y), cursor_scale, &layout)));
         if state.hovering.swap(inside, Ordering::SeqCst) != inside {
-            let _ = win.set_ignore_cursor_events(!inside);
+            platform::set_ignore_cursor_events(&win, !inside);
             let _ = app.emit("overlay://hover", inside);
         }
     });
@@ -333,19 +345,20 @@ mod tests {
 
     #[test]
     fn pill_mode_notch_when_notch_present() {
-        let notch = NotchInfo { width: 185.0, height: 32.0 };
-        let l = overlay_frame((0.0, 0.0), (3024.0, 1964.0), 2.0, Some(notch));
+        // Pill is as tall as the notch and has a 120 px "ear" on each side.
+        let notch = NotchInfo { width: 220.0, height: 38.0 };
+        let l = overlay_frame((0.0, 0.0), (3600.0, 2338.0), 2.0, Some(notch));
         assert_eq!(l.mode, PillMode::Notch);
-        assert_eq!(l.notch_width, Some(185.0));
-        assert!(l.pill_w >= 185.0);
-        assert_eq!(l.pill_h, 32.0);
+        assert_eq!(l.notch, Some(notch));
+        assert_eq!((l.pill_w, l.pill_h), (220.0 + 2.0 * 120.0, 38.0));
+        assert_eq!(l.x, (1800.0 - 520.0) / 2.0);
     }
 
     #[test]
     fn pill_mode_strip_without_notch() {
         let l = overlay_frame((0.0, 0.0), (1920.0, 1080.0), 1.0, None);
         assert_eq!(l.mode, PillMode::Strip);
-        assert_eq!(l.notch_width, None);
+        assert_eq!(l.notch, None);
         assert_eq!((l.pill_w, l.pill_h), (160.0, 6.0));
     }
 
@@ -355,7 +368,21 @@ mod tests {
         assert_eq!(serde_json::to_value(PillMode::Strip).unwrap(), "strip");
         let l = overlay_frame((0.0, 0.0), (1920.0, 1080.0), 1.0, None);
         let v = serde_json::to_value(OverlayConfig::from(&l)).unwrap();
-        assert_eq!(v, serde_json::json!({ "mode": "strip", "notchWidth": null }));
+        assert_eq!(
+            v,
+            serde_json::json!({
+                "mode": "strip", "notchWidth": null, "notchHeight": null, "pillWidth": 160.0, "pillHeight": 6.0
+            })
+        );
+        let notch = NotchInfo { width: 185.0, height: 32.0 };
+        let l = overlay_frame((0.0, 0.0), (3024.0, 1964.0), 2.0, Some(notch));
+        let v = serde_json::to_value(OverlayConfig::from(&l)).unwrap();
+        assert_eq!(
+            v,
+            serde_json::json!({
+                "mode": "notch", "notchWidth": 185.0, "notchHeight": 32.0, "pillWidth": 425.0, "pillHeight": 32.0
+            })
+        );
     }
 
     #[test]

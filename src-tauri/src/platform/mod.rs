@@ -74,6 +74,18 @@ pub fn make_overlay(window: &WebviewWindow) -> Result<(), String> {
     }
 }
 
+/// Toggles click-through. Windows re-adds styles tao drops when it rebuilds them.
+pub fn set_ignore_cursor_events(window: &WebviewWindow, ignore: bool) {
+    #[cfg(target_os = "windows")]
+    {
+        windows::set_ignore_cursor_events(window, ignore)
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = window.set_ignore_cursor_events(ignore);
+    }
+}
+
 /// Shows the overlay without activating the app or taking focus.
 pub fn show_overlay(window: &WebviewWindow) {
     #[cfg(target_os = "macos")]

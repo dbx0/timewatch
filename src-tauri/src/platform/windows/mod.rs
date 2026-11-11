@@ -3,8 +3,7 @@ use windows::Win32::Foundation::HWND;
 use windows::Win32::System::SystemInformation::GetTickCount;
 use windows::Win32::UI::Input::KeyboardAndMouse::{GetLastInputInfo, LASTINPUTINFO};
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetWindowLongPtrW, SetForegroundWindow, SetWindowLongPtrW, GWL_EXSTYLE, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
-    WS_EX_TOPMOST,
+    GetWindowLongPtrW, SetForegroundWindow, SetWindowLongPtrW, GWL_EXSTYLE, WS_EX_TOOLWINDOW,
 };
 
 use crate::window::OVERLAY_LABEL;
@@ -24,33 +23,52 @@ fn hwnd(window: &WebviewWindow) -> Option<HWND> {
     window.hwnd().ok().map(|h| HWND(h.0 as _))
 }
 
-/// Adds (`on`) or removes extended style bits.
-fn set_ex_style(hwnd: HWND, bits: u32, on: bool) {
-    // SAFETY: `hwnd` is a live window handle owned by this process.
-    unsafe {
-        let cur = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
-        let next = if on { cur | bits as isize } else { cur & !(bits as isize) };
-        if next != cur {
-            SetWindowLongPtrW(hwnd, GWL_EXSTYLE, next);
+/// tao rebuilds GWL_EXSTYLE from its own flags on every flag change (ignore-cursor, focusable)
+/// and has no flag for WS_EX_TOOLWINDOW, so it is re-added after each such change. The task is
+/// queued on the event loop behind the Tauri setter that triggered the rebuild (FIFO), or runs
+/// inline right after it when already on the main thread.
+fn reapply_toolwindow(window: &WebviewWindow, then: impl FnOnce(HWND) + Send + 'static) {
+    let Some(h) = hwnd(window) else { return };
+    let raw = h.0 as usize;
+    let _ = window.run_on_main_thread(move || {
+        let h = HWND(raw as _);
+        // SAFETY: `h` is a live window handle owned by this process, used on its thread.
+        unsafe {
+            let cur = GetWindowLongPtrW(h, GWL_EXSTYLE);
+            let next = cur | WS_EX_TOOLWINDOW.0 as isize;
+            if next != cur {
+                SetWindowLongPtrW(h, GWL_EXSTYLE, next);
+            }
         }
-    }
+        then(h);
+    });
 }
 
+/// Non-activation comes from `focusable(false)` (tao's WS_EX_NOACTIVATE) and topmost from
+/// `always_on_top(true)`; only WS_EX_TOOLWINDOW (hidden from Alt+Tab) is ours.
 pub fn make_overlay(window: &WebviewWindow) -> Result<(), String> {
-    let h = hwnd(window).ok_or("overlay sem HWND")?;
-    set_ex_style(h, (WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_TOPMOST).0, true);
+    hwnd(window).ok_or("overlay sem HWND")?;
+    reapply_toolwindow(window, |_| {});
     Ok(())
 }
 
-/// A `WS_EX_NOACTIVATE` window cannot take keyboard focus: drop the bit, then activate.
+pub fn set_ignore_cursor_events(window: &WebviewWindow, ignore: bool) {
+    let _ = window.set_ignore_cursor_events(ignore);
+    reapply_toolwindow(window, |_| {});
+}
+
+/// Focusability goes through Tauri so tao's own flags (and later rebuilds) agree.
 pub fn focus_overlay(app: &AppHandle) {
-    let Some(h) = app.get_webview_window(OVERLAY_LABEL).as_ref().and_then(hwnd) else { return };
-    set_ex_style(h, WS_EX_NOACTIVATE.0, false);
-    // SAFETY: valid HWND of our own window.
-    let _ = unsafe { SetForegroundWindow(h) };
+    let Some(win) = app.get_webview_window(OVERLAY_LABEL) else { return };
+    let _ = win.set_focusable(true);
+    reapply_toolwindow(&win, |h| {
+        // SAFETY: valid HWND of our own window.
+        let _ = unsafe { SetForegroundWindow(h) };
+    });
 }
 
 pub fn unfocus_overlay(app: &AppHandle) {
-    let Some(h) = app.get_webview_window(OVERLAY_LABEL).as_ref().and_then(hwnd) else { return };
-    set_ex_style(h, WS_EX_NOACTIVATE.0, true);
+    let Some(win) = app.get_webview_window(OVERLAY_LABEL) else { return };
+    let _ = win.set_focusable(false);
+    reapply_toolwindow(&win, |_| {});
 }

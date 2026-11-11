@@ -54,6 +54,10 @@ export interface OverlayConfig {
   mode: PillMode;
   /** Logical px; null without a notch. */
   notchWidth: number | null;
+  notchHeight: number | null;
+  /** Collapsed pill size, logical px: notch + 120 px ears each side (notch) or 160×6 (strip). */
+  pillWidth: number;
+  pillHeight: number;
 }
 
 /** Interactive overlay area, logical px relative to the overlay window. */

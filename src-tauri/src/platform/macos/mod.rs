@@ -1,6 +1,7 @@
 use std::sync::mpsc;
 
-use objc2::MainThreadMarker;
+use objc2::{sel, MainThreadMarker};
+use objc2_foundation::NSObjectProtocol;
 use objc2_app_kit::NSScreen;
 use tauri::{AppHandle, Manager, Monitor, WebviewWindow};
 use tauri_nspanel::{CollectionBehavior, ManagerExt, StyleMask, WebviewWindowExt};
@@ -71,6 +72,13 @@ pub fn notch_info(app: &AppHandle, monitor: &Monitor) -> Option<NotchInfo> {
             let f = s.frame();
             (f.origin.x - x).abs() < 1.0 && (f.size.width - w).abs() < 1.0 && (f.size.height - h).abs() < 1.0
         })?;
+        // macOS 12+ selectors; an unknown selector would abort, so check first.
+        let supported = [sel!(safeAreaInsets), sel!(auxiliaryTopLeftArea), sel!(auxiliaryTopRightArea)]
+            .into_iter()
+            .all(|s| screen.respondsToSelector(s));
+        if !supported {
+            return None;
+        }
         let top = screen.safeAreaInsets().top;
         if top <= 0.0 {
             return None;
