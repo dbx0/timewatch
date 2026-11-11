@@ -97,10 +97,48 @@ fn undo_resume_drops_question_about_the_undone_entry() {
     tr.pause(t(9, 30)).unwrap();
     tr.resume(t(10, 0)).unwrap();
     assert!(tr.begin_absence(&tz(), t(10, 5), t(10, 40), AbsenceReason::Idle).unwrap());
-    tr.undo().unwrap();
+    tr.undo(t(16, 0)).unwrap();
     let s = snap(&tr, t(10, 40));
     assert_eq!(s.status, ClockStatus::Paused);
     assert_eq!(s.pending_absence, None);
+}
+
+fn heartbeat(tr: &Tracker) -> Option<Ms> {
+    repo::get_meta(&tr.db, META_HEARTBEAT).unwrap()
+}
+
+#[test]
+fn late_absence_answer_keeps_heartbeat_at_answer_time() {
+    let (mut tr, a, _) = with_absence();
+    tr.heartbeat(t(14, 59)).unwrap();
+    tr.resolve_absence(&tz(), AbsenceResolution::Discount, t(15, 0)).unwrap();
+    assert!(heartbeat(&tr).unwrap() >= t(15, 0));
+    // A crash right after answering must not close the entry back at 13:10.
+    let mut tr = Tracker::new(tr.db);
+    assert_eq!(tr.reconcile_on_startup(&tz(), t(15, 1)).unwrap(), None);
+    assert_eq!(all_entries(&tr)[1], e(2, a.id, t(13, 10), None));
+}
+
+#[test]
+fn opening_an_entry_never_moves_heartbeat_backwards() {
+    let (mut tr, a, _) = setup();
+    tr.add_entry(a.id, t(7, 0), t(8, 0), t(9, 0)).unwrap();
+    repo::set_meta(&tr.db, META_HEARTBEAT, &t(10, 0)).unwrap();
+    tr.switch_to(a.id, t(9, 0)).unwrap();
+    assert_eq!(heartbeat(&tr), Some(t(10, 0)));
+}
+
+#[test]
+fn undo_of_stop_refreshes_heartbeat_to_now() {
+    let (mut tr, a, _) = setup();
+    tr.switch_to(a.id, t(9, 0)).unwrap();
+    tr.heartbeat(t(10, 0)).unwrap();
+    tr.stop(t(10, 0)).unwrap();
+    tr.undo(t(11, 0)).unwrap();
+    assert_eq!(heartbeat(&tr), Some(t(11, 0)));
+    let mut tr = Tracker::new(tr.db);
+    assert_eq!(tr.reconcile_on_startup(&tz(), t(11, 1)).unwrap(), None);
+    assert_eq!(all_entries(&tr), vec![e(1, a.id, t(9, 0), None)]);
 }
 
 #[test]
@@ -121,13 +159,13 @@ fn stop_is_undoable() {
     assert!(s.can_undo);
     assert_eq!(all_entries(&tr)[0].end, Some(t(10, 0)));
 
-    assert!(tr.undo().unwrap());
+    assert!(tr.undo(t(16, 0)).unwrap());
     let s = snap(&tr, t(10, 30));
     assert_eq!(s.status, ClockStatus::Running);
     assert_eq!(s.session_ms, 90 * MIN);
     assert!(!s.can_undo);
     assert_eq!(all_entries(&tr), vec![e(1, a.id, t(9, 0), None)]);
-    assert!(!tr.undo().unwrap());
+    assert!(!tr.undo(t(16, 0)).unwrap());
 }
 
 #[test]
@@ -137,7 +175,7 @@ fn switch_is_undoable() {
     tr.pause(t(9, 30)).unwrap();
     let before = all_entries(&tr);
     tr.switch_to(b.id, t(10, 0)).unwrap();
-    tr.undo().unwrap();
+    tr.undo(t(16, 0)).unwrap();
     assert_eq!(all_entries(&tr), before);
     let s = snap(&tr, t(10, 0));
     assert_eq!(s.status, ClockStatus::Paused);
@@ -176,7 +214,7 @@ fn absence_discount_undo_restores_everything() {
     let (mut tr, _, _) = with_absence();
     let before = all_entries(&tr);
     tr.resolve_absence(&tz(), AbsenceResolution::Discount, t(13, 10)).unwrap();
-    assert!(tr.undo().unwrap());
+    assert!(tr.undo(t(16, 0)).unwrap());
     assert_eq!(all_entries(&tr), before);
     let s = snap(&tr, t(14, 0));
     assert_eq!(s.session_ms, 5 * 60 * MIN);
@@ -193,7 +231,7 @@ fn absence_lunch_marks_lunch() {
     );
     let l = repo::lunches_between(&tr.db, day(), day()).unwrap();
     assert_eq!(l, vec![Lunch { day: day(), start: t(12, 5), end: t(13, 10) }]);
-    tr.undo().unwrap();
+    tr.undo(t(16, 0)).unwrap();
     assert!(repo::lunches_between(&tr.db, day(), day()).unwrap().is_empty());
     assert_eq!(all_entries(&tr), vec![e(1, a.id, t(9, 0), None)]);
 }
@@ -204,7 +242,7 @@ fn absence_lunch_replaces_existing_lunch_and_undo_restores_it() {
     let old = Lunch { day: day(), start: t(11, 0), end: t(11, 30) };
     repo::upsert_lunch(&tr.db, &old).unwrap();
     tr.resolve_absence(&tz(), AbsenceResolution::Lunch, t(13, 10)).unwrap();
-    tr.undo().unwrap();
+    tr.undo(t(16, 0)).unwrap();
     assert_eq!(repo::lunches_between(&tr.db, day(), day()).unwrap(), vec![old]);
 }
 
@@ -217,7 +255,7 @@ fn absence_keep_changes_nothing() {
     assert_eq!(s.session_ms, 5 * 60 * MIN);
     assert_eq!(s.pending_absence, None);
     assert!(s.can_undo);
-    tr.undo().unwrap();
+    tr.undo(t(16, 0)).unwrap();
     assert!(snap(&tr, t(14, 0)).pending_absence.is_some());
 }
 
@@ -237,7 +275,7 @@ fn absence_move_to_other_project() {
     assert_eq!(s.session_project.map(|p| p.id), Some(a.id));
     assert_eq!(s.session_ms, (3 * 60 + 5 + 50) * MIN);
     assert_eq!(s.today_ms, 5 * 60 * MIN);
-    tr.undo().unwrap();
+    tr.undo(t(16, 0)).unwrap();
     assert_eq!(all_entries(&tr), vec![e(1, a.id, t(9, 0), None)]);
 }
 
@@ -302,7 +340,7 @@ fn reconcile_closes_at_heartbeat_after_two_minutes() {
     assert_eq!(s.status, ClockStatus::Idle);
     assert_eq!(s.notice.as_deref(), Some("O relógio foi parado às 10:00, quando o app fechou"));
     assert!(s.can_undo);
-    tr.undo().unwrap();
+    tr.undo(t(16, 0)).unwrap();
     assert_eq!(all_entries(&tr), vec![e(1, a.id, t(9, 0), None)]);
     let s = snap(&tr, t(10, 5));
     assert_eq!(s.status, ClockStatus::Running);
@@ -396,7 +434,7 @@ fn update_entry_rejects_overlap() {
     // A valid edit works and is undoable.
     tr.update_entry(x.id, Some(t(7, 30)), None, Some(b.id), t(12, 0)).unwrap();
     assert_eq!(repo::get_entry(&tr.db, x.id).unwrap(), Some(e(x.id, b.id, t(7, 30), Some(t(9, 0)))));
-    tr.undo().unwrap();
+    tr.undo(t(16, 0)).unwrap();
     assert_eq!(all_entries(&tr), before);
 }
 
@@ -419,7 +457,7 @@ fn delete_running_entry_ends_session_and_undo_restores() {
     tr.delete_entry(1).unwrap();
     assert!(all_entries(&tr).is_empty());
     assert_eq!(snap(&tr, t(10, 0)).status, ClockStatus::Idle);
-    tr.undo().unwrap();
+    tr.undo(t(16, 0)).unwrap();
     assert_eq!(all_entries(&tr), vec![e(1, a.id, t(9, 0), None)]);
     assert_eq!(snap(&tr, t(10, 0)).session_ms, 60 * MIN);
 }
@@ -430,7 +468,7 @@ fn unmark_lunch_is_undoable() {
     tr.resolve_absence(&tz(), AbsenceResolution::Lunch, t(13, 10)).unwrap();
     tr.unmark_lunch(day()).unwrap();
     assert!(repo::lunches_between(&tr.db, day(), day()).unwrap().is_empty());
-    tr.undo().unwrap();
+    tr.undo(t(16, 0)).unwrap();
     assert_eq!(repo::lunches_between(&tr.db, day(), day()).unwrap().len(), 1);
 }
 

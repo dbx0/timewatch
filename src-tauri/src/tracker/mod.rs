@@ -221,9 +221,18 @@ fn insert_entry(db: &Db, log: &mut UndoLog, pid: i64, start: Ms, end: Option<Ms>
     log.push(UndoOp::DeleteEntry(e.id));
     if end.is_none() {
         // A fresh heartbeat so a crash before the first tick closes near the clock in.
-        repo::set_meta(db, META_HEARTBEAT, &start)?;
+        bump_heartbeat(db, start)?;
     }
     Ok(e)
+}
+
+/// Moves the heartbeat forward to `at`; never moves it backwards.
+fn bump_heartbeat(db: &Db, at: Ms) -> Result<()> {
+    let hb = repo::get_meta::<Ms>(db, META_HEARTBEAT)?;
+    if hb.is_none_or(|hb| hb < at) {
+        repo::set_meta(db, META_HEARTBEAT, &at)?;
+    }
+    Ok(())
 }
 
 /// Rejects inverted ranges and overlaps (open entries end at `now`; touching is fine).
@@ -420,6 +429,8 @@ impl Tracker {
                 }
             }
             insert_entry(db, log, a.project_id, back, None)?;
+            // The app is alive at answer time, which may be long after `back`.
+            bump_heartbeat(db, now)?;
             save_session(db, Some(&s), false)?;
             if res == AbsenceResolution::Lunch {
                 let day = local_day(tz, a.start);
@@ -438,13 +449,17 @@ impl Tracker {
     // ---- undo, heartbeat, startup, quit ----
 
     /// Reverts the last undoable operation. Returns false when there is nothing to undo.
-    pub fn undo(&mut self) -> Result<bool> {
+    /// If an entry is running afterwards, the heartbeat is refreshed to `now`.
+    pub fn undo(&mut self, now: Ms) -> Result<bool> {
         let Some(log) = self.undo.clone() else {
             return Ok(false);
         };
         let mut pending = self.pending.clone();
         let tx = self.db.conn().unchecked_transaction()?;
         log.apply(&self.db, &mut pending)?;
+        if repo::open_entry(&self.db)?.is_some() {
+            repo::set_meta(&self.db, META_HEARTBEAT, &now)?;
+        }
         tx.commit()?;
         self.pending = pending;
         self.undo = None;
