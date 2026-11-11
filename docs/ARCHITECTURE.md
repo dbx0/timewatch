@@ -15,19 +15,19 @@ Backend (`src-tauri/src`):
 | `absence.rs` | Detecção de ausência (inatividade e suspensão), thread de 5 s |
 | `commands/` | Comandos Tauri, `AppState`, emissão de `tracker://changed` |
 | `export/` | CSV e HTML (escapados) do relatório semanal |
-| `i18n.rs` | Textos pt-BR gerados no Rust (exportações) |
+| `i18n.rs` | Textos gerados no Rust em pt-BR, en e es (erros, avisos, bandeja, títulos de janela, exportações), detecção do idioma do sistema (`sys-locale`, só em `system_lang`) e formatos por idioma (decimal, separador do CSV). Tracker e exportações recebem o `Lang` resolvido |
 | `tray/` | Ícone de bandeja, título/tooltip, atalho global, autostart |
 | `window/` | Overlay (notch/faixa), janelas normais, polling de hover e de monitores |
 | `platform/` | Fachada por SO. Código específico só em `platform/macos` e `platform/windows` |
 
-Frontend (`src`): `views/` (Notch, Report, Settings, Onboarding, escolhidos pela janela), `components/{notch,report,settings,onboarding,ui}`, `stores/` (Zustand), `lib/` (`api.ts` é a única ponte para o Tauri, mais datas e formatação), `i18n/pt-BR.ts` (todas as strings de UI).
+Frontend (`src`): `views/` (Notch, Report, Settings, Onboarding, escolhidos pela janela), `components/{notch,report,settings,onboarding,ui}`, `stores/` (Zustand), `lib/` (`api.ts` é a única ponte para o Tauri, mais datas e formatação), `i18n/` (tabelas `pt-BR.ts`, `en.ts`, `es.ts` com as mesmas chaves, tipadas a partir do pt-BR; store `useLang`, `useT()` em componentes e `getT()` fora do React). Cada janela abre com `?lang=` e depois segue `get_language` e `settings://language`.
 
 ## Comandos
 
 Estado e relógio: `get_snapshot`, `switch_project`, `pause_clock`, `resume_clock`, `stop_clock`, `resolve_absence`, `undo`.
 Projetos: `create_project`, `update_project`.
 Relatórios e entradas: `get_week`, `get_day`, `add_entry`, `update_entry`, `delete_entry`, `set_entry_note`, `unmark_lunch`. `pause_clock` e `stop_clock` devolvem o bloco fechado (`ClosedEntry`), usado pelo notch para pedir a nota.
-Configurações e exportação: `get_settings`, `set_settings`, `export_week`.
+Configurações e exportação: `get_settings`, `set_settings`, `get_language` (idioma resolvido), `export_week`.
 Janelas e overlay: `open_window`, `overlay_set_hit_rect`, `overlay_set_expanded`, `overlay_focus`, `get_overlay_config`.
 Primeira execução: `finish_onboarding`, `skip_onboarding`.
 
@@ -35,6 +35,7 @@ Primeira execução: `finish_onboarding`, `skip_onboarding`.
 
 - `tracker://changed` (payload: snapshot): qualquer mudança de estado; também atualiza a bandeja
 - `tracker://tick` (`{ now }`): a cada segundo, para o relógio da UI
+- `settings://language` (`"pt-BR" | "en" | "es"`): o idioma resolvido mudou; a bandeja e os títulos das janelas já foram atualizados
 - `overlay://config`: posição, tamanho e modo (notch ou faixa) do overlay
 - `overlay://hover` (bool): cursor entrou ou saiu do retângulo interativo
 - `overlay://expanded` (bool): painel aberto ou fechado
