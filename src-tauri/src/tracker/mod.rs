@@ -679,6 +679,10 @@ impl Tracker {
         })
     }
 
+    pub fn projects(&self) -> Result<Vec<Project>> {
+        Ok(repo::list_projects(&self.db)?)
+    }
+
     pub fn week_report<Tz: TimeZone>(
         &self,
         tz: &Tz,
