@@ -59,7 +59,8 @@ export function OnboardingApp() {
 
   return (
     <div data-view="onboarding" className="flex h-full flex-col bg-win px-[34px] pb-6 pt-[30px] text-[14px] text-text">
-      <div className="flex-1 overflow-auto">
+      {/* -mx/px: room so focus rings at the edges are not clipped by the scroller. */}
+      <div className="-mx-1.5 flex-1 overflow-auto px-1.5 pb-1">
         {step === 0 && <StepWelcome onNext={next} onSkip={() => run(api.skipOnboarding())} />}
         {step === 1 && <StepProjects projects={projects} onChange={setProjects} />}
         {step === 2 && settings && <StepWorkday value={settings.jornadaH} onChange={(v) => update({ jornadaH: v })} />}

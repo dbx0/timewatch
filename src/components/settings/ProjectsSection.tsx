@@ -4,13 +4,13 @@ import * as api from "../../lib/api";
 import type { Project } from "../../lib/types";
 import { toast } from "../../stores/toast";
 import { Button } from "../ui/Button";
+import { textField } from "../ui/field";
 import { ColorPicker, PROJECT_PALETTE } from "../ui/ColorPicker";
 import { Popover } from "../ui/Popover";
 import { Toggle } from "../ui/Toggle";
 
 const t = ptBR.settings;
-const txt =
-  "rounded-[9px] bg-raise px-3 py-2 text-text outline-none placeholder:text-dim focus:ring-2 focus:ring-accent2";
+const txt = textField;
 
 function ColorDot({ project, onPick }: { project: Project; onPick: (c: string) => void }) {
   const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null);

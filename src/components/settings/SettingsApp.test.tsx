@@ -71,7 +71,7 @@ describe("SettingsApp", () => {
     nav("Almoço");
     fireEvent.click(screen.getByText("12:00"));
     fireEvent.click(screen.getByLabelText("Hora 13"));
-    fireEvent.click(screen.getByText("OK"));
+    fireEvent.click(screen.getByLabelText("Minuto 00"));
     expect(api.setSettings).toHaveBeenCalledWith({ ...base, lunchRef: "13:00:00" });
   });
 

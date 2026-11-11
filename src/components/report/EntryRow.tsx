@@ -32,7 +32,7 @@ export function EntryRow({ day, seg, projects, onUpdate, onDelete }: Props) {
       {clippedStart ? (
         <span className="text-xs text-dim">{t.continuesFromPrev}</span>
       ) : (
-        <TimePicker value={hm(seg.start)} onChange={change("start", hm(seg.start))} />
+        <TimePicker minuteStep={1} value={hm(seg.start)} onChange={change("start", hm(seg.start))} />
       )}
       <span className="text-dim">→</span>
       {clippedEnd ? (
@@ -40,7 +40,7 @@ export function EntryRow({ day, seg, projects, onUpdate, onDelete }: Props) {
       ) : seg.running ? (
         <span className="rounded-full bg-accent/20 px-2.5 py-1 text-xs font-semibold text-accent2">{t.now}</span>
       ) : (
-        <TimePicker value={hm(seg.end)} onChange={change("end", hm(seg.end))} />
+        <TimePicker minuteStep={1} value={hm(seg.end)} onChange={change("end", hm(seg.end))} />
       )}
       <Dropdown
         className="ml-1.5"

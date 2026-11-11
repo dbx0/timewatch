@@ -19,11 +19,13 @@ export function JornadaEditor({ value, onChange }: Props) {
           <Button key={h} size="sm" onClick={() => preset(h)}>{ptBR.settings.preset(h)}</Button>
         ))}
       </div>
-      <div className="mt-3 flex flex-wrap gap-2">
+      {/* 4 + 3 regular grid: fits the 640px onboarding and the 780px settings windows. */}
+      <div data-testid="jornada-days" className="mt-3 grid max-w-[520px] grid-cols-4 gap-2">
         {ptBR.weekdaysShort.map((d, i) => (
-          <div key={d} className="w-[104px] rounded-xl bg-raise px-2 pb-2 pt-2.5 text-center">
+          <div key={d} data-testid="jornada-day" className="min-w-0 rounded-xl bg-raise p-2 text-center">
             <div className="mb-1.5 text-xs text-mute">{d}</div>
             <Stepper
+              compact
               value={value[i] ?? 0}
               step={0.5}
               min={0}

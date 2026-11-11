@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { Stepper } from "./Stepper";
 import { Segmented } from "./Segmented";
 import { Toggle } from "./Toggle";
@@ -44,14 +44,88 @@ describe("Toggle", () => {
 });
 
 describe("TimePicker", () => {
-  it("emits the chosen time on OK", () => {
+  const open = (value = "09:30", props: Partial<React.ComponentProps<typeof TimePicker>> = {}) => {
+    const onChange = vi.fn();
+    render(<TimePicker value={value} onChange={onChange} {...props} />);
+    fireEvent.click(screen.getByRole("button", { name: value }));
+    return onChange;
+  };
+
+  it("has no OK button: the hour only marks, the minute confirms and closes", () => {
+    const onChange = open();
+    expect(screen.queryByRole("button", { name: "OK" })).toBeNull();
+    fireEvent.click(screen.getByRole("option", { name: "Hora 10" }));
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.getByRole("option", { name: "Hora 10" }).getAttribute("aria-selected")).toBe("true");
+    fireEvent.click(screen.getByRole("option", { name: "Minuto 05" }));
+    expect(onChange).toHaveBeenCalledWith("10:05");
+    expect(screen.getByRole("button", { name: /\d\d:\d\d/ }).getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("lists minutes in steps of 5 by default and of 1 with minuteStep=1", () => {
+    open();
+    expect(screen.getAllByRole("option", { name: /^Minuto/ })).toHaveLength(12);
+    expect(screen.queryByRole("option", { name: "Minuto 03" })).toBeNull();
+    cleanup();
+    open("09:30", { minuteStep: 1 });
+    expect(screen.getAllByRole("option", { name: /^Minuto/ })).toHaveLength(60);
+  });
+
+  it("keeps an off-step current minute selectable", () => {
+    open("09:32");
+    expect(screen.getByRole("option", { name: "Minuto 32" }).getAttribute("aria-selected")).toBe("true");
+  });
+
+  it("navigates with arrows and confirms with Enter", () => {
+    const onChange = open("09:30");
+    const panel = screen.getByTestId("timepicker-panel");
+    fireEvent.keyDown(panel, { key: "ArrowDown" });
+    fireEvent.keyDown(panel, { key: "ArrowRight" });
+    fireEvent.keyDown(panel, { key: "ArrowDown" });
+    expect(onChange).not.toHaveBeenCalled();
+    fireEvent.keyDown(panel, { key: "Enter" });
+    expect(onChange).toHaveBeenCalledWith("10:35");
+    expect(screen.getByRole("button", { name: /\d\d:\d\d/ }).getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("Esc cancels without changing", () => {
+    const onChange = open("09:30");
+    fireEvent.click(screen.getByRole("option", { name: "Hora 15" }));
+    fireEvent.keyDown(screen.getByTestId("timepicker-panel"), { key: "Escape" });
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: /\d\d:\d\d/ }).getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("is compact: 28px items, 13px text, no saturated selected block", () => {
+    open("09:30");
+    const on = screen.getByRole("option", { name: "Hora 09" });
+    expect(on.className).toContain("h-7");
+    expect(on.className).toContain("text-[13px]");
+    expect(on.className).not.toContain("bg-accent ");
+    expect(on.className).not.toMatch(/bg-accent(\s|$)/);
+  });
+
+  it("accepts typed digits on the focused trigger", () => {
     const onChange = vi.fn();
     render(<TimePicker value="09:30" onChange={onChange} />);
-    fireEvent.click(screen.getByRole("button", { name: "09:30" }));
-    fireEvent.click(screen.getByRole("option", { name: "Hora 10" }));
-    fireEvent.click(screen.getByRole("option", { name: "Minuto 05" }));
-    fireEvent.click(screen.getByRole("button", { name: "OK" }));
-    expect(onChange).toHaveBeenCalledWith("10:05");
+    const btn = screen.getByRole("button", { name: "09:30" });
+    for (const k of "1330") fireEvent.keyDown(btn, { key: k });
+    expect(onChange).toHaveBeenCalledWith("13:30");
+    onChange.mockClear();
+    for (const k of "745") fireEvent.keyDown(btn, { key: k });
+    fireEvent.keyDown(btn, { key: "Enter" });
+    expect(onChange).toHaveBeenCalledWith("07:45");
+    onChange.mockClear();
+    for (const k of "2599") fireEvent.keyDown(btn, { key: k });
+    expect(onChange).not.toHaveBeenCalled();
+  });
+});
+
+describe("Stepper compact", () => {
+  it("fills its container with 28px buttons", () => {
+    render(<Stepper compact value={8} step={0.5} min={0} max={24} onChange={() => {}} />);
+    expect(screen.getByRole("group").className).toContain("w-full");
+    expect(screen.getByRole("button", { name: "Aumentar" }).className).toContain("w-7");
   });
 });
 

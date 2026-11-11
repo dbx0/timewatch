@@ -2,10 +2,10 @@ import { useRef, useState } from "react";
 import { ptBR } from "../../i18n/pt-BR";
 import { PROJECT_PALETTE } from "../ui/ColorPicker";
 import { Button } from "../ui/Button";
+import { textField } from "../ui/field";
 
 const t = ptBR.onboarding;
-const txt =
-  "rounded-[9px] bg-raise px-3 py-2 text-text outline-none placeholder:text-dim focus:ring-2 focus:ring-accent2";
+const txt = textField;
 
 export interface DraftProject {
   name: string;

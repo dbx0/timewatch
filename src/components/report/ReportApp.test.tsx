@@ -175,12 +175,17 @@ describe("DayView", () => {
     vi.mocked(api.undo).mockResolvedValue(true);
   });
 
+  it("entry times pick minutes one by one", async () => {
+    await openDay({ segments: [seg(7, "09:00", "12:00")] });
+    fireEvent.click(screen.getByRole("button", { name: "12:00" }));
+    expect(screen.getByRole("option", { name: "Minuto 07" })).toBeTruthy();
+  });
+
   it("changing an end time calls updateEntry with only the end", async () => {
     await openDay({ segments: [seg(7, "09:00", "12:00")] });
     fireEvent.click(screen.getByRole("button", { name: "12:00" }));
     fireEvent.click(screen.getByRole("option", { name: "Hora 17" }));
     fireEvent.click(screen.getByRole("option", { name: "Minuto 30" }));
-    fireEvent.click(screen.getByRole("button", { name: "OK" }));
     await flush();
     expect(api.updateEntry).toHaveBeenCalledWith(7, { end: atLocal("2026-11-11", "17:30") });
   });
@@ -190,7 +195,7 @@ describe("DayView", () => {
     await openDay({ segments: [seg(7, "09:00", "12:00")] });
     fireEvent.click(screen.getByRole("button", { name: "12:00" }));
     fireEvent.click(screen.getByRole("option", { name: "Hora 17" }));
-    fireEvent.click(screen.getByRole("button", { name: "OK" }));
+    fireEvent.click(screen.getByRole("option", { name: "Minuto 00" }));
     await flush();
     expect(screen.getByText("Esse horário sobrepõe outro registro")).toBeTruthy();
   });
@@ -256,7 +261,7 @@ describe("DayView", () => {
   it("does not update when the picked time is unchanged", async () => {
     await openDay({ segments: [seg(7, "09:00", "12:00")] });
     fireEvent.click(screen.getByRole("button", { name: "12:00" }));
-    fireEvent.click(screen.getByRole("button", { name: "OK" }));
+    fireEvent.keyDown(screen.getByTestId("timepicker-panel"), { key: "Enter" });
     await flush();
     expect(api.updateEntry).not.toHaveBeenCalled();
   });
