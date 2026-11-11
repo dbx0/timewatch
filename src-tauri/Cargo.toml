@@ -43,3 +43,8 @@ lto = true
 opt-level = 3
 panic = "abort"
 strip = true
+
+# Proc-macro dylibs must not be stripped: recent macOS rejects them at dlopen
+# ("mis-aligned LINKEDIT string pool") and the release build fails.
+[profile.release.build-override]
+strip = "none"
