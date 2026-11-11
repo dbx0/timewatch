@@ -39,7 +39,6 @@ export const ptBR = {
     jornada: (h: string) => `jornada ${h}h`,
     noJornada: "dia sem jornada, tudo é extra",
     search: "Trocar para… ou criar projeto",
-    shortcutHint: "⌥ Space",
     createRow: (q: string) => `＋ Criar projeto “${q}”`,
     allProjects: "Todos os projetos",
     empty: "Nenhum projeto ainda. Digite um nome acima pra criar o primeiro.",
@@ -162,7 +161,8 @@ export const ptBR = {
     startNone: "Nenhum agora, só quero explorar",
     startProject: (n: string) => `Começar em ${n}`,
     saveFailed: "Não foi possível salvar. Tente de novo.",
-    coach: "Seu relógio mora aqui. Passe o mouse pra trocar de projeto, ou use ⌥ Space de qualquer lugar.",
+    coach: (shortcut: string) =>
+      `Seu relógio mora aqui. Passe o mouse pra trocar de projeto, ou use ${shortcut} de qualquer lugar.`,
   },
   toast: {
     switched: (name: string) => `Agora em ${name}`,

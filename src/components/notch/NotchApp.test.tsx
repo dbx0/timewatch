@@ -10,6 +10,7 @@ import { snapshot } from "./fixtures";
 import { NotchApp } from "./NotchApp";
 import { resetFocusRequests } from "./keyboard";
 import { toast, useToasts } from "../../stores/toast";
+import { setLang } from "../../i18n";
 
 const notch: OverlayConfig = { mode: "notch", notchWidth: 220, notchHeight: 38, pillWidth: 460, pillHeight: 38 };
 const strip: OverlayConfig = { mode: "strip", notchWidth: null, notchHeight: null, pillWidth: 160, pillHeight: 6 };
@@ -321,5 +322,43 @@ describe("NotchApp hit rect", () => {
     expect(last()).toEqual({ x: 30, y: 0, w: 460, h: 78 });
     act(() => useToasts.getState().dismiss());
     expect(last()).toEqual({ x: 30, y: 0, w: 460, h: 38 });
+  });
+});
+
+describe("NotchApp language", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    act(() => useToasts.getState().dismiss());
+    useTracker.setState({ snapshot: null, snapAt: 0, now: 0 });
+    vi.mocked(api.onChanged).mockImplementation(async (cb) => ((changed = cb), () => {}));
+    vi.mocked(api.onOverlayCoach).mockImplementation(async (cb) => ((coach = cb), () => {}));
+  });
+  afterEach(() => act(() => setLang("pt-BR")));
+
+  it("a notice re-rendered in another language is not toasted again", async () => {
+    const pt = "O relógio foi parado às 10:00, quando o app fechou";
+    await mount(notch, snapshot({ notice: pt, noticeKey: "quit:1" }));
+    expect(useToasts.getState().current?.message).toBe(pt);
+    act(() => changed(snapshot({ notice: "The clock was stopped at 10:00, when the app closed", noticeKey: "quit:1" })));
+    expect(useToasts.getState().current?.message).toBe(pt);
+    act(() => changed(snapshot({ notice: "The clock was stopped at 11:00, when the app closed", noticeKey: "quit:2" })));
+    expect(useToasts.getState().current?.message).toBe("The clock was stopped at 11:00, when the app closed");
+  });
+
+  it("coach bubble shows the configured shortcut", async () => {
+    vi.spyOn(navigator, "platform", "get").mockReturnValue("MacIntel");
+    vi.mocked(api.getSettings).mockResolvedValue({ shortcut: "CommandOrControl+Shift+K" } as never);
+    await mount();
+    await act(async () => coach());
+    expect(document.querySelector("[data-coach]")?.textContent).toContain("⇧ ⌘ K");
+  });
+
+  it("coach bubble on Windows shows Alt+Space", async () => {
+    vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
+    vi.mocked(api.getSettings).mockResolvedValue({ shortcut: "Alt+Space" } as never);
+    await mount();
+    await act(async () => coach());
+    expect(document.querySelector("[data-coach]")?.textContent).toContain("Alt+Space");
+    expect(document.querySelector("[data-coach]")?.textContent).not.toContain("⌥");
   });
 });

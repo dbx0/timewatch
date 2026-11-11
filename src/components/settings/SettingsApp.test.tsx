@@ -140,7 +140,7 @@ describe("SettingsApp", () => {
     await mount();
     nav("Almoço");
     act(() => setLang("en"));
-    expect(screen.getByText("Usual lunch time")).toBeTruthy();
+    expect(screen.getByText("Lunch reference time")).toBeTruthy();
     expect(screen.getByText("General")).toBeTruthy();
     act(() => setLang("pt-BR"));
     expect(screen.getByText("Horário de referência")).toBeTruthy();

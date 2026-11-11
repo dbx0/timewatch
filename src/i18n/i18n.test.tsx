@@ -32,6 +32,44 @@ describe("i18n tables", () => {
     }
   });
 
+  it("every en/es string differs from pt-BR unless allowlisted", () => {
+    // Words that are legitimately the same (units, formats, cognates).
+    const same: Record<"en" | "es", string[]> = {
+      en: [
+        "ui.ok", "notch.noteSubtitle", "settings.min15", "settings.min30", "onboarding.lunch30",
+        "onboarding.lunch60", "onboarding.lunch90", "report.exportCsv", "report.exportHtml", "report.total",
+        "weekdaysInitial[1]", "weekdaysInitial[5]",
+      ],
+      // Spanish shares many words with Portuguese; each of these was checked as correct Spanish.
+      es: [
+        "language.label", "ui.ok", "ui.increase", "ui.hour", "ui.minute", "ui.note", "titlebar.minimize",
+        "titlebar.maximize", "titlebar.restore", "titlebar.report", "notch.jornada", "notch.client",
+        "notch.cancel", "notch.discount", "notch.noteSubtitle", "settings.min15", "settings.min30",
+        "settings.clientPh", "settings.holidays", "report.holiday", "report.holidayParen", "onboarding.next", "onboarding.setup", "onboarding.clients", "onboarding.lunch30",
+        "onboarding.lunch60", "onboarding.lunch90", "report.prevWeek", "report.thisWeek", "report.byClient",
+        "report.export", "report.exportCsv", "report.exportHtml", "report.exportFileName", "report.exported",
+        "report.expected", "report.total", "report.jornada", "report.extra", "report.copied",
+        "report.backToWeek", "report.editNote", "report.cancelNote", "report.weekdaysLong[5]",
+        "report.weekdaysLong[6]", "dayMonth", "weekdaysShort[5]", "weekdaysShort[6]", "weekdaysInitial[5]",
+        "weekdaysInitial[6]", "monthsShort[2]", "monthsShort[3]", "monthsShort[5]", "monthsShort[6]",
+        "monthsShort[7]", "monthsShort[10]", "monthsLong[3]", "monthsLong[7]",
+      ],
+    };
+    const leaves = (o: unknown, path = ""): [string, string][] => {
+      if (typeof o === "string") return [[path, o]];
+      // Functions are compared by their output on sample arguments.
+      if (typeof o === "function") return [[path, String((o as (...a: unknown[]) => unknown)(1, "x", "y", "z"))]];
+      if (Array.isArray(o)) return o.flatMap((v, i) => leaves(v, `${path}[${i}]`));
+      return Object.entries(o as Record<string, unknown>).flatMap(([k, v]) => leaves(v, path ? `${path}.${k}` : k));
+    };
+    const base = new Map(leaves(ptBR));
+    for (const [code, table] of [["en", en], ["es", es]] as const) {
+      const equal = leaves(table).filter(([p, v]) => base.get(p) === v).map(([p]) => p);
+      expect(equal.filter((p) => !same[code].includes(p)), `${code}: untranslated`).toEqual([]);
+      expect(same[code].filter((p) => !equal.includes(p)), `${code}: stale allowlist`).toEqual([]);
+    }
+  });
+
   it("translations differ from pt-BR where it matters", () => {
     expect(en.notch.pause).not.toBe(ptBR.notch.pause);
     expect(es.settings.nav.general).not.toBe(ptBR.settings.nav.general);

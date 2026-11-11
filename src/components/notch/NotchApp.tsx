@@ -15,6 +15,7 @@ import { NotePrompt } from "./NotePrompt";
 import { Panel } from "./Panel";
 import { Pill, STRIP_PILL } from "./Pill";
 import { useT } from "../../i18n";
+import { formatShortcut } from "../settings/shortcut";
 
 /** First-run tip under the pill. */
 export const COACH_MS = 7000;
@@ -44,6 +45,7 @@ export function NotchApp() {
   const [grown, setGrown] = useState(false);
   const [view, setView] = useState<View>({ kind: "main" });
   const [coach, setCoach] = useState(false);
+  const [shortcut, setShortcut] = useState("Alt+Space");
   const coachTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const [focusReq, setFocusReq] = useState(0);
 
@@ -164,6 +166,7 @@ export function NotchApp() {
       }),
       api.onOverlayConfig(setConfig),
       api.onOverlayCoach(() => {
+        api.getSettings().then((s) => s?.shortcut && setShortcut(s.shortcut), () => {});
         setCoach(true);
         clearTimeout(coachTimer.current);
         coachTimer.current = setTimeout(() => setCoach(false), COACH_MS);
@@ -260,14 +263,16 @@ export function NotchApp() {
     if (!hoveringRef.current) closePanel();
   }, [closePanel]);
 
-  // Backend notices (e.g. clock stopped when the app closed) become a toast once.
+  // Backend notices (e.g. clock stopped when the app closed) become a toast once. Deduped by
+  // identity (kind + time): a language switch re-renders the same notice with new text.
   const lastNotice = useRef<string | null>(null);
   const notice = snapshot?.notice ?? null;
+  const noticeKey = snapshot?.noticeKey ?? null;
   const canUndo = snapshot?.canUndo ?? false;
   useEffect(() => {
-    if (notice && notice !== lastNotice.current) toast(notice, canUndo ? undoable : undefined);
-    lastNotice.current = notice;
-  }, [notice, canUndo]);
+    if (notice && noticeKey !== lastNotice.current) toast(notice, canUndo ? undoable : undefined);
+    lastNotice.current = noticeKey;
+  }, [notice, noticeKey, canUndo]);
 
   // Hit rect: the pill/panel, plus the toast while it offers "Desfazer". Layout sizes (offset*)
   // ignore the opening transform, so the final panel size is reported right away.
@@ -383,7 +388,7 @@ export function NotchApp() {
           className="pointer-events-none relative mt-3 max-w-[340px] rounded-xl bg-accent px-3.5 py-2.5 text-center text-[13px] font-medium text-white shadow-[0_10px_30px_rgba(0,0,0,.4)]"
         >
           <span aria-hidden className="absolute -top-1.5 left-1/2 -ml-1.5 border-x-[6px] border-b-[6px] border-x-transparent border-b-accent" />
-          {L.onboarding.coach}
+          {L.onboarding.coach(formatShortcut(shortcut))}
         </div>
       )}
     </div>

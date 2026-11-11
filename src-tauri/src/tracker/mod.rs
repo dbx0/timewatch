@@ -134,6 +134,8 @@ pub struct TrackerSnapshot {
     pub pending_absence: Option<Absence>,
     pub can_undo: bool,
     pub notice: Option<String>,
+    /// Identity of `notice` (kind and time), stable across languages, so the UI shows it once.
+    pub notice_key: Option<String>,
     /// Set by the last operation when it was a pause/stop that closed a block; any other
     /// mutation (or undo) clears it.
     pub last_closed_entry: Option<ClosedEntry>,
@@ -206,18 +208,25 @@ type Result<T> = std::result::Result<T, TrackerError>;
 /// A one-shot message for the notch, rendered in the language current at snapshot time.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Notice {
-    /// Clock stopped on sleep at `HH:MM`.
-    Sleep(String),
-    /// Clock stopped at `HH:MM` because the app closed.
-    Quit(String),
+    /// Clock stopped on sleep at `at` (`hhmm` is its local `HH:MM`).
+    Sleep { at: Ms, hhmm: String },
+    /// Clock stopped at `at` because the app closed.
+    Quit { at: Ms, hhmm: String },
 }
 
 impl Notice {
     fn render(&self, lang: Lang) -> String {
         let t = lang.strings();
         match self {
-            Notice::Sleep(at) => fill(t.notice_sleep, &[at]),
-            Notice::Quit(at) => fill(t.notice_quit, &[at]),
+            Notice::Sleep { hhmm, .. } => fill(t.notice_sleep, &[hhmm]),
+            Notice::Quit { hhmm, .. } => fill(t.notice_quit, &[hhmm]),
+        }
+    }
+
+    fn key(&self) -> String {
+        match self {
+            Notice::Sleep { at, .. } => format!("sleep:{at}"),
+            Notice::Quit { at, .. } => format!("quit:{at}"),
         }
     }
 }
@@ -577,7 +586,7 @@ impl Tracker {
                 save_session(db, None, false)
             })?;
             self.pending = None;
-            self.notice = Some(Notice::Sleep(hhmm(tz, stop_at)));
+            self.notice = Some(Notice::Sleep { at: stop_at, hhmm: hhmm(tz, stop_at) });
             return Ok(false);
         }
         // A newer absence replaces an unanswered one; the older interval stays counted.
@@ -695,7 +704,7 @@ impl Tracker {
             save_session(db, None, false)
         })?;
         self.pending = None;
-        self.notice = Some(Notice::Quit(hhmm(tz, last)));
+        self.notice = Some(Notice::Quit { at: last, hhmm: hhmm(tz, last) });
         Ok(Some(last))
     }
 
@@ -891,6 +900,7 @@ impl Tracker {
             pending_absence: self.pending.clone(),
             can_undo: self.undo.is_some(),
             notice: self.notice.as_ref().map(|n| n.render(lang)),
+            notice_key: self.notice.as_ref().map(Notice::key),
             last_closed_entry: self.last_closed,
         })
     }

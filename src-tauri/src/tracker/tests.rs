@@ -802,8 +802,12 @@ fn notices_render_in_the_current_language() {
     tr.reconcile_on_startup(&tz(), t(10, 3)).unwrap();
     assert_eq!(snap(&tr, t(10, 3)).notice.as_deref(), Some("The clock was stopped at 10:00, when the app closed"));
     // Switching language re-renders the pending notice (set_settings does not clear it).
+    let key = snap(&tr, t(10, 3)).notice_key;
+    assert_eq!(key, Some(format!("quit:{}", t(10, 0))));
     with_language(&mut tr, LanguagePref::Es);
-    assert_eq!(snap(&tr, t(10, 3)).notice.as_deref(), Some("El reloj se detuvo a las 10:00, cuando la app se cerró"));
+    let s = snap(&tr, t(10, 3));
+    assert_eq!(s.notice.as_deref(), Some("El reloj se detuvo a las 10:00, cuando la app se cerró"));
+    assert_eq!(s.notice_key, key, "same notice, same identity in any language");
 
     let (mut tr, a, _) = setup();
     let mut st = tr.settings().unwrap();
@@ -816,4 +820,5 @@ fn notices_render_in_the_current_language() {
         snap(&tr, t(13, 10)).notice.as_deref(),
         Some("The clock was stopped at 12:05, when the computer went to sleep")
     );
+    assert_eq!(snap(&tr, t(13, 10)).notice_key, Some(format!("sleep:{}", t(12, 5))));
 }

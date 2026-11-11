@@ -210,6 +210,7 @@ mod tests {
             pending_absence: None,
             can_undo: false,
             notice: None,
+            notice_key: None,
             last_closed_entry: None,
         }
     }

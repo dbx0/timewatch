@@ -27,6 +27,7 @@ export function snapshot(over: Partial<TrackerSnapshot> = {}): TrackerSnapshot {
     pendingAbsence: null,
     canUndo: false,
     notice: null,
+    noticeKey: null,
     lastClosedEntry: null,
     ...over,
   };
@@ -38,6 +39,7 @@ export function apiMock() {
   const listen = () => vi.fn(() => Promise.resolve(() => {}));
   return {
     getSnapshot: ok(),
+    getSettings: ok(),
     switchProject: ok(),
     pauseClock: ok(),
     resumeClock: ok(),

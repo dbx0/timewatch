@@ -115,6 +115,8 @@ export interface TrackerSnapshot {
   pendingAbsence: Absence | null;
   canUndo: boolean;
   notice: string | null;
+  /** Identity of `notice` (kind + time), the same in every language. */
+  noticeKey: string | null;
   lastClosedEntry: ClosedEntry | null;
 }
 
