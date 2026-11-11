@@ -62,6 +62,9 @@ export const openWindow = (kind: WindowKind) => invoke<void>("open_window", { ki
 export const overlaySetHitRect = (rect: HitRect | null) => invoke<void>("overlay_set_hit_rect", { rect });
 export const overlaySetExpanded = (expanded: boolean) => invoke<void>("overlay_set_expanded", { expanded });
 export const overlayFocus = () => invoke<void>("overlay_focus");
+export const finishOnboarding = (projects: { name: string; client: string }[], startIndex: number | null) =>
+  invoke<void>("finish_onboarding", { projects, startIndex });
+export const skipOnboarding = () => invoke<void>("skip_onboarding");
 export const getOverlayConfig = () => invoke<OverlayConfig | null>("get_overlay_config");
 
 export const onChanged = (cb: (snapshot: TrackerSnapshot) => void): Promise<UnlistenFn> =>
@@ -77,3 +80,4 @@ export const onOverlayConfig = (cb: (config: OverlayConfig) => void): Promise<Un
   listen<OverlayConfig>("overlay://config", (e) => cb(e.payload));
 export const onOverlayFocusSearch = (cb: () => void): Promise<UnlistenFn> =>
   listen<null>("overlay://focus-search", () => cb());
+export const onOverlayCoach = (cb: () => void): Promise<UnlistenFn> => listen<null>("overlay://coach", () => cb());

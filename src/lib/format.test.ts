@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clock, dayLabel, dec, dur, hm, weekdayShort } from "./format";
+import { clock, dayLabel, dec, dur, hm, roundMs, weekdayShort } from "./format";
 
 const H = 3_600_000;
 const M = 60_000;
@@ -31,5 +31,13 @@ describe("format", () => {
     expect(dayLabel("2026-11-10")).toBe("10 nov");
     expect(weekdayShort(0)).toBe("Seg");
     expect(weekdayShort(6)).toBe("Dom");
+  });
+
+  it("roundMs rounds to nearest, half up", () => {
+    const m = 60_000;
+    expect(roundMs(130 * m, 0)).toBe(130 * m);
+    expect(roundMs(130 * m, 15)).toBe(135 * m);
+    expect(roundMs(130 * m, 30)).toBe(120 * m);
+    expect(roundMs(135 * m, 30)).toBe(150 * m);
   });
 });

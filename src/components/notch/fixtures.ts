@@ -55,5 +55,6 @@ export function apiMock() {
     onOverlayExpanded: listen(),
     onOverlayConfig: listen(),
     onOverlayFocusSearch: listen(),
+    onOverlayCoach: listen(),
   };
 }

@@ -18,6 +18,7 @@ let hover: (h: boolean) => void;
 let expanded: (e: boolean) => void;
 let changed: (s: TrackerSnapshot) => void;
 let focusSearch: () => void;
+let coach: () => void;
 const flush = () => act(async () => {});
 const state = () => document.querySelector("[data-view=notch]")?.getAttribute("data-state");
 
@@ -38,6 +39,7 @@ describe("NotchApp", () => {
     vi.mocked(api.onOverlayExpanded).mockImplementation(async (cb) => ((expanded = cb), () => {}));
     vi.mocked(api.onChanged).mockImplementation(async (cb) => ((changed = cb), () => {}));
     vi.mocked(api.onOverlayFocusSearch).mockImplementation(async (cb) => ((focusSearch = cb), () => {}));
+    vi.mocked(api.onOverlayCoach).mockImplementation(async (cb) => ((coach = cb), () => {}));
     vi.useFakeTimers({ shouldAdvanceTime: true });
   });
   afterEach(() => vi.useRealTimers());
@@ -48,6 +50,20 @@ describe("NotchApp", () => {
     expect(screen.getByText("Portal B2B")).toBeTruthy();
     expect(screen.getByText("1:00:00")).toBeTruthy();
     expect(api.overlaySetHitRect).toHaveBeenCalled();
+  });
+
+  it("coach bubble shows for 7 s and hides on hover", async () => {
+    await mount();
+    act(() => coach());
+    expect(document.querySelector("[data-coach]")).toBeTruthy();
+    expect(screen.getByText(/Seu relógio mora aqui/)).toBeTruthy();
+    act(() => void vi.advanceTimersByTime(6900));
+    expect(document.querySelector("[data-coach]")).toBeTruthy();
+    act(() => void vi.advanceTimersByTime(200));
+    expect(document.querySelector("[data-coach]")).toBeNull();
+    act(() => coach());
+    act(() => hover(true));
+    expect(document.querySelector("[data-coach]")).toBeNull();
   });
 
   it("idle pill says no project is running", async () => {

@@ -4,8 +4,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, MutexGuard};
 
 use chrono::{Local, NaiveDate, Utc};
-use serde::Serialize;
-use tauri::{AppHandle, Emitter, State};
+use serde::{Deserialize, Serialize};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::domain::calc::{DayCalc, Grouping, WeekReport};
 use crate::domain::{Entry, Ms, Project, Settings};
@@ -255,6 +255,75 @@ pub fn export_week(
     std::fs::write(&path, content).map_err(|e| format!("Não foi possível salvar o arquivo: {e}"))
 }
 
+/// Project identity colors, same order as `PROJECT_PALETTE` in `ColorPicker.tsx`.
+pub const PROJECT_PALETTE: [&str; 12] = [
+    "#3ddc84", "#5aa9ff", "#ffb347", "#c08bff", "#ff6b8b", "#4dd6d6",
+    "#e6e04f", "#ff8f5a", "#9be15d", "#7c9cff", "#f78fb3", "#b0b0bb",
+];
+
+pub fn palette_color(i: usize) -> &'static str {
+    PROJECT_PALETTE[i % PROJECT_PALETTE.len()]
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct OnboardingProject {
+    pub name: String,
+    pub client: String,
+}
+
+/// Pure part of finishing onboarding: creates the projects with palette colors, marks the
+/// settings as onboarded (keeping everything saved during the steps) and optionally starts one.
+pub fn apply_onboarding(
+    t: &mut Tracker,
+    projects: &[OnboardingProject],
+    start_index: Option<usize>,
+    now: Ms,
+) -> Result<(), TrackerError> {
+    let mut created = Vec::with_capacity(projects.len());
+    for (i, p) in projects.iter().enumerate() {
+        created.push(t.create_project(p.name.trim(), p.client.trim(), palette_color(i))?);
+    }
+    let mut s = t.settings()?;
+    s.onboarded = true;
+    t.set_settings(s)?;
+    if let Some(p) = start_index.and_then(|i| created.get(i)) {
+        t.switch_to(p.id, now)?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn finish_onboarding(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    projects: Vec<OnboardingProject>,
+    start_index: Option<usize>,
+) -> Result<(), String> {
+    mutate(&app, &state, |t, now| apply_onboarding(t, &projects, start_index, now))?;
+    close_onboarding(&app);
+    window::expand_overlay(&app);
+    let _ = app.emit("overlay://coach", ());
+    Ok(())
+}
+
+/// "Pular": marks onboarding done with no data and closes the window.
+#[tauri::command]
+pub async fn skip_onboarding(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    mutate(&app, &state, |t, _| {
+        let mut s = t.settings()?;
+        s.onboarded = true;
+        t.set_settings(s)
+    })?;
+    close_onboarding(&app);
+    Ok(())
+}
+
+fn close_onboarding(app: &AppHandle) {
+    if let Some(w) = app.get_webview_window("onboarding") {
+        let _ = w.close();
+    }
+}
+
 /// Async so window creation does not deadlock on Windows (Tauri runs sync commands on the main thread).
 #[tauri::command]
 pub async fn open_window(app: AppHandle, kind: String) -> Result<(), String> {
@@ -303,6 +372,38 @@ mod tests {
         assert_eq!(v["day"]["day"], "2026-11-09");
         assert_eq!(v["projects"][0]["name"], "Alpha");
         assert!(v["day"]["perProject"].is_object());
+    }
+
+    fn op(name: &str, client: &str) -> OnboardingProject {
+        OnboardingProject { name: name.into(), client: client.into() }
+    }
+
+    #[test]
+    fn onboarding_creates_projects_with_palette_and_keeps_settings() {
+        let mut t = Tracker::new(Db::open_in_memory().unwrap());
+        let mut s = t.settings().unwrap();
+        s.rounding_min = 15;
+        t.set_settings(s).unwrap();
+        let ps: Vec<_> = (0..13).map(|i| op(&format!("P{i}"), "Acme")).collect();
+        apply_onboarding(&mut t, &ps, Some(1), 1_000).unwrap();
+        let got = t.projects().unwrap();
+        assert_eq!(got.len(), 13);
+        assert_eq!(got[0].color, "#3ddc84");
+        assert_eq!(got[11].color, "#b0b0bb");
+        assert_eq!(got[12].color, "#3ddc84");
+        let s = t.settings().unwrap();
+        assert!(s.onboarded);
+        assert_eq!(s.rounding_min, 15);
+        let snap = t.snapshot(&Local, 2_000).unwrap();
+        assert_eq!(snap.session_project.unwrap().name, "P1");
+    }
+
+    #[test]
+    fn onboarding_without_start_leaves_clock_idle() {
+        let mut t = Tracker::new(Db::open_in_memory().unwrap());
+        apply_onboarding(&mut t, &[op(" A ", " Acme ")], None, 1_000).unwrap();
+        assert_eq!(t.projects().unwrap()[0].name, "A");
+        assert!(t.snapshot(&Local, 2_000).unwrap().session_project.is_none());
     }
 
     #[test]

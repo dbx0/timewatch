@@ -12,6 +12,10 @@ import { CreateProject } from "./CreateProject";
 import { focusRequested, isFocusEcho, isTyping, requestKeyboard } from "./keyboard";
 import { Panel } from "./Panel";
 import { Pill, STRIP_PILL } from "./Pill";
+import { ptBR } from "../../i18n/pt-BR";
+
+/** First-run tip under the pill. */
+export const COACH_MS = 7000;
 
 /** Unpinned panel closes this long after the cursor leaves. */
 export const CLOSE_DELAY = 450;
@@ -36,6 +40,8 @@ export function NotchApp() {
   const [open, setOpenState] = useState(false);
   const [grown, setGrown] = useState(false);
   const [view, setView] = useState<View>({ kind: "main" });
+  const [coach, setCoach] = useState(false);
+  const coachTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const [focusReq, setFocusReq] = useState(0);
 
   const openRef = useRef(false);
@@ -118,6 +124,8 @@ export function NotchApp() {
     (h: boolean) => {
       hoveringRef.current = h;
       if (h) {
+        clearTimeout(coachTimer.current);
+        setCoach(false);
         clearTimeout(closeTimer.current);
         if (!openRef.current) hoverOpen(false);
         return;
@@ -149,6 +157,11 @@ export function NotchApp() {
         }
       }),
       api.onOverlayConfig(setConfig),
+      api.onOverlayCoach(() => {
+        setCoach(true);
+        clearTimeout(coachTimer.current);
+        coachTimer.current = setTimeout(() => setCoach(false), COACH_MS);
+      }),
       api.onOverlayHover(onHover),
       api.onOverlayExpanded((e) => {
         if (e) openPanel(true);
@@ -165,6 +178,7 @@ export function NotchApp() {
     ];
     return () => {
       clearTimers();
+      clearTimeout(coachTimer.current);
       subs.forEach((p) => p.then((un) => un(), () => {}));
     };
   }, [onHover, openPanel, closePanel]);
@@ -322,6 +336,17 @@ export function NotchApp() {
       >
         <ToastHost className="pointer-events-none flex justify-center" />
       </div>
+      {/* Click-through (not in the hit rect). */}
+      {coach && (
+        <div
+          role="note"
+          data-coach
+          className="pointer-events-none relative mt-3 max-w-[340px] rounded-xl bg-accent px-3.5 py-2.5 text-center text-[13px] font-medium text-white shadow-[0_10px_30px_rgba(0,0,0,.4)]"
+        >
+          <span aria-hidden className="absolute -top-1.5 left-1/2 -ml-1.5 border-x-[6px] border-b-[6px] border-x-transparent border-b-accent" />
+          {ptBR.onboarding.coach}
+        </div>
+      )}
     </div>
   );
 }

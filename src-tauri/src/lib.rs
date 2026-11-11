@@ -61,6 +61,13 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init());
     let app = platform::register(builder)
         .setup(|app| {
+            // Debug builds can point at a throwaway data dir (never the real DB).
+            #[cfg(debug_assertions)]
+            let dir = match std::env::var_os("TIMEWATCH_DATA_DIR") {
+                Some(d) => std::path::PathBuf::from(d),
+                None => app.path().app_data_dir()?,
+            };
+            #[cfg(not(debug_assertions))]
             let dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&dir)?;
             let db = Db::open(&dir.join("timewatch.sqlite3"))?;
@@ -69,8 +76,10 @@ pub fn run() {
             app.manage(AppState::new(tracker));
             start_ticker(app.handle().clone());
             absence::start_monitor(app.handle().clone());
-            // Task 15 adds onboarding.
             window::create_overlay(app.handle())?;
+            if !app.state::<AppState>().lock().settings()?.onboarded {
+                window::create_or_focus(app.handle(), "onboarding")?;
+            }
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
             tray::setup_tray(app.handle())?;
@@ -102,6 +111,8 @@ pub fn run() {
             commands::overlay_set_expanded,
             commands::overlay_focus,
             commands::get_overlay_config,
+            commands::finish_onboarding,
+            commands::skip_onboarding,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

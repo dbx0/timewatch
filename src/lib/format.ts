@@ -54,3 +54,10 @@ export function hm(ms: number): string {
   const d = new Date(ms);
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
+
+/** Nearest multiple of `roundingMin` minutes, halves round up. 0 = exact. Mirrors Rust `round_ms`. */
+export function roundMs(ms: number, roundingMin: number): number {
+  if (roundingMin === 0) return ms;
+  const step = roundingMin * 60_000;
+  return Math.floor((ms + step / 2) / step) * step;
+}
