@@ -1,12 +1,12 @@
-import { ptBR } from "../../i18n/pt-BR";
+import { useT } from "../../i18n";
 import { PROJECT_PALETTE } from "../ui/ColorPicker";
 import type { DraftProject } from "./StepProjects";
 
-const t = ptBR.onboarding;
 const opt =
   "mb-2 flex w-full cursor-pointer items-center gap-3 rounded-xl bg-raise px-3.5 py-3 text-left outline-none transition-colors hover:bg-raise2 focus-visible:ring-2 focus-visible:ring-accent2";
 
 export function StepStart({ projects, onStart }: { projects: DraftProject[]; onStart: (index: number | null) => void }) {
+  const t = useT().onboarding;
   return (
     <>
       <h2 className="mb-1.5 text-2xl font-semibold tracking-tight">{t.startTitle}</h2>

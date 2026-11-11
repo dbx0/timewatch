@@ -1,9 +1,8 @@
-import { ptBR } from "../../i18n/pt-BR";
+import { useT } from "../../i18n";
 import { JornadaEditor } from "../settings/JornadaEditor";
 
-const t = ptBR.onboarding;
-
 export function StepWorkday({ value, onChange }: { value: number[]; onChange: (v: number[]) => void }) {
+  const t = useT().onboarding;
   return (
     <>
       <h2 className="mb-1.5 text-2xl font-semibold tracking-tight">{t.workdayTitle}</h2>

@@ -1,15 +1,20 @@
-import { ptBR } from "../i18n/pt-BR";
+import { getLang, getT, type Lang } from "../i18n";
 
-/** Decimal hours with comma, half-up to 2 decimals, trimmed. Mirrors Rust `fmt_hours`; 0 gives "". */
-export function dec(ms: number): string {
+/** `.` in English, `,` in pt-BR and es. */
+export const decimalSep = (lang: Lang = getLang()) => (lang === "en" ? "." : ",");
+
+/** Decimal hours, half-up to 2 decimals, trimmed, with the language's separator (`5,5` / `5.5`).
+ * Mirrors Rust `fmt_hours`; 0 gives "". */
+export function dec(ms: number, lang: Lang = getLang()): string {
+  const sep = decimalSep(lang);
   if (ms === 0) return "";
   const hundredths = Math.floor((Math.abs(ms) * 100 + 1_800_000) / 3_600_000);
   const sign = ms < 0 && hundredths > 0 ? "-" : "";
   const whole = Math.floor(hundredths / 100);
   const frac = hundredths % 100;
   if (frac === 0) return `${sign}${whole}`;
-  if (frac % 10 === 0) return `${sign}${whole},${frac / 10}`;
-  return `${sign}${whole},${String(frac).padStart(2, "0")}`;
+  if (frac % 10 === 0) return `${sign}${whole}${sep}${frac / 10}`;
+  return `${sign}${whole}${sep}${String(frac).padStart(2, "0")}`;
 }
 
 export function dur(ms: number): string {
@@ -41,12 +46,13 @@ export function dayLabel(date: Date | string): string {
     m = date.getMonth();
     d = date.getDate();
   }
-  return `${d} ${ptBR.monthsShort[m]}`;
+  const t = getT();
+  return t.dayMonth(d, t.monthsShort[m]);
 }
 
 /** 0 = Monday. */
 export function weekdayShort(i: number): string {
-  return ptBR.weekdaysShort[i];
+  return getT().weekdaysShort[i];
 }
 
 /** Local wall-clock "HH:MM" of an epoch ms. */

@@ -1,3 +1,4 @@
+import { useT } from "../../i18n";
 import { atLocal } from "../../lib/dates";
 import { hm } from "../../lib/format";
 import type { IsoDate, Lunch, Project, Seg } from "../../lib/types";
@@ -14,6 +15,7 @@ interface Props {
 }
 
 export function Timeline({ day, segments, lunch, projects, now }: Props) {
+  const t = useT().report;
   const dayStart = atLocal(day, "00:00");
   const hourOf = (ms: number) => (ms - dayStart) / H;
   let lo = 7;
@@ -50,7 +52,7 @@ export function Timeline({ day, segments, lunch, projects, now }: Props) {
           data-testid="timeline-lunch"
           className="absolute bottom-2 top-2 min-w-[2px] rounded-md bg-[repeating-linear-gradient(45deg,#2c2c35_0_6px,#23232b_6px_12px)]"
           style={{ left: pct(lunch.start), width: width(lunch.start, lunch.end) }}
-          title="Almoço"
+          title={t.lunch}
         />
       )}
       {ticks.map((h) => (

@@ -1,11 +1,12 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { useToasts } from "../../stores/toast";
-import { ptBR } from "../../i18n/pt-BR";
+import { useT } from "../../i18n";
 
 /** `className` positions the host; the default pins it to the bottom of the window. */
 export function ToastHost({
   className = "pointer-events-none fixed bottom-[22px] left-0 right-0 z-[300] flex justify-center",
 }: { className?: string }) {
+  const L = useT();
   const current = useToasts((s) => s.current);
   const dismiss = useToasts((s) => s.dismiss);
   return (
@@ -31,7 +32,7 @@ export function ToastHost({
                 }}
                 className="cursor-pointer rounded-md px-1 font-semibold text-accent outline-none focus-visible:ring-2 focus-visible:ring-accent2"
               >
-                {ptBR.ui.undo}
+                {L.ui.undo}
               </button>
             )}
           </motion.div>

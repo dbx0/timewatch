@@ -1,8 +1,6 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useState, type ReactNode } from "react";
-import { ptBR } from "../../i18n/pt-BR";
-
-const t = ptBR.titlebar;
+import { useT } from "../../i18n";
 
 function CtrlButton({ label, onClick, danger, children }: { label: string; onClick: () => void; danger?: boolean; children: ReactNode }) {
   return (
@@ -23,6 +21,7 @@ function CtrlButton({ label, onClick, danger, children }: { label: string; onCli
 }
 
 export function TitleBar({ title, resizable = true }: { title: string; resizable?: boolean }) {
+  const t = useT().titlebar;
   const [maximized, setMaximized] = useState(false);
 
   useEffect(() => {

@@ -1,6 +1,6 @@
 import { addDays, atLocal } from "../../lib/dates";
 import { dur, hm } from "../../lib/format";
-import { ptBR } from "../../i18n/pt-BR";
+import { useT } from "../../i18n";
 import type { IsoDate, Project, Seg } from "../../lib/types";
 import { useState } from "react";
 import { Dropdown, type DropdownOption } from "../ui/Dropdown";
@@ -17,9 +17,8 @@ interface Props {
   onNote: (id: number, note: string | null) => void;
 }
 
-const t = ptBR.report;
-
 export function EntryRow({ day, seg, projects, onUpdate, onDelete, onNote }: Props) {
+  const t = useT().report;
   const [noteAnchor, setNoteAnchor] = useState<HTMLButtonElement | null>(null);
   const [editing, setEditing] = useState(false);
   const options: DropdownOption<number>[] = projects

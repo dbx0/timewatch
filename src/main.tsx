@@ -1,6 +1,8 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import "./styles/index.css";
+import { getLang, setLang } from "./i18n";
+import { getLanguage, onLanguage } from "./lib/api";
 import { Notch } from "./views/Notch";
 import { Onboarding } from "./views/Onboarding";
 import { Report } from "./views/Report";
@@ -12,6 +14,11 @@ const views: Record<string, () => React.JSX.Element> = {
   settings: Settings,
   onboarding: Onboarding,
 };
+
+// `?lang=` already set the first frame; the backend is the source of truth after that.
+document.documentElement.lang = getLang();
+void getLanguage().then(setLang, () => {});
+void onLanguage(setLang);
 
 const view = new URLSearchParams(location.search).get("view") ?? "";
 const View = views[view] ?? Report;

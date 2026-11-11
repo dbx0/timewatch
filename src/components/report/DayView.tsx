@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import * as api from "../../lib/api";
 import { addDays, atLocal, errMsg, parseIso, weekdayIndex } from "../../lib/dates";
 import { dayLabel, dec, dur, hm, roundMs } from "../../lib/format";
-import { ptBR } from "../../i18n/pt-BR";
+import { useT } from "../../i18n";
 import type { DayDto, IsoDate, Settings } from "../../lib/types";
 import { toast } from "../../stores/toast";
 import { Button } from "../ui/Button";
@@ -19,10 +19,10 @@ interface Props {
   onBack: () => void;
 }
 
-const t = ptBR.report;
 const HOUR = 3_600_000;
 
 export function DayView({ day, today, now, reloadKey, onDayChange, onBack }: Props) {
+  const t = useT().report;
   const [data, setData] = useState<DayDto | null>(null);
   const [settings, setSettings] = useState<Pick<Settings, "lunchMin" | "lunchRef" | "roundingMin"> | null>(null);
   const seq = useRef(0);

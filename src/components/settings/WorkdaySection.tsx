@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ptBR } from "../../i18n/pt-BR";
+import { useT } from "../../i18n";
 import { dayLabel } from "../../lib/format";
 import { toIso } from "../../lib/dates";
 import { Calendar } from "../ui/Calendar";
@@ -7,9 +7,8 @@ import { Popover } from "../ui/Popover";
 import { JornadaEditor } from "./JornadaEditor";
 import { Row, type SectionProps } from "./Row";
 
-const t = ptBR.settings;
-
 export function WorkdaySection({ settings, update }: SectionProps) {
+  const t = useT().settings;
   const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null);
   const [open, setOpen] = useState(false);
   const holidays = [...settings.holidays].sort();

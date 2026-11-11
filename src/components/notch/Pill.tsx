@@ -1,10 +1,9 @@
 import { motion } from "framer-motion";
-import { ptBR } from "../../i18n/pt-BR";
+import { useT } from "../../i18n";
 import { clock } from "../../lib/format";
 import type { OverlayConfig, TrackerSnapshot } from "../../lib/types";
 import { Dot, PauseIcon } from "./icons";
 
-const s = ptBR.notch;
 const IDLE_DOT = "#444";
 /** Strip mode: the pill the thin bar grows into on hover. */
 export const STRIP_PILL = { w: 280, h: 32 };
@@ -21,6 +20,7 @@ interface Props {
 const pillBase = "flex cursor-pointer select-none items-center bg-black text-[13px] font-semibold whitespace-nowrap text-white";
 
 export function Pill({ config, snapshot, sessionMs, grown, onClick }: Props) {
+  const s = useT().notch;
   const status = snapshot?.status ?? "idle";
   const p = snapshot?.sessionProject ?? null;
   const time = clock(sessionMs);

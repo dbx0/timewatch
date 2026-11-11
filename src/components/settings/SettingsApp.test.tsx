@@ -13,6 +13,7 @@ vi.mock("@tauri-apps/api/window", () => ({ availableMonitors: vi.fn() }));
 
 import { availableMonitors } from "@tauri-apps/api/window";
 import * as api from "../../lib/api";
+import { setLang } from "../../i18n";
 import { useToasts } from "../../stores/toast";
 import { projects, snapshot } from "../notch/fixtures";
 import { SettingsApp } from "./SettingsApp";
@@ -31,6 +32,7 @@ const base: Settings = {
   shortcut: "Alt+Space",
   overlayMonitor: null,
   onboarded: true,
+  language: "system",
 };
 const flush = () => act(async () => {});
 
@@ -122,6 +124,26 @@ describe("SettingsApp", () => {
     fireEvent.click(screen.getByText("Tela principal"));
     fireEvent.click(screen.getByText("DELL U2720Q"));
     expect(api.setSettings).toHaveBeenCalledWith({ ...base, overlayMonitor: "DELL U2720Q" });
+  });
+
+  it("language dropdown defaults to automatic and saves the choice", async () => {
+    await mount();
+    expect(screen.getByText("Idioma")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Idioma" }));
+    const names = screen.getAllByRole("option").map((o) => o.textContent);
+    expect(names).toEqual(expect.arrayContaining(["Automático (idioma do sistema)✓", "Português", "English", "Español"]));
+    fireEvent.click(screen.getByText("English"));
+    expect(api.setSettings).toHaveBeenCalledWith({ ...base, language: "en" });
+  });
+
+  it("re-renders in the new language without losing the section", async () => {
+    await mount();
+    nav("Almoço");
+    act(() => setLang("en"));
+    expect(screen.getByText("Usual lunch time")).toBeTruthy();
+    expect(screen.getByText("General")).toBeTruthy();
+    act(() => setLang("pt-BR"));
+    expect(screen.getByText("Horário de referência")).toBeTruthy();
   });
 
   it("shortcut recorder captures a combo with a modifier and Esc cancels", async () => {

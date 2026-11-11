@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type Ref } from "react";
-import { ptBR } from "../../i18n/pt-BR";
+import { useT } from "../../i18n";
 import { MAX_NOTE_CHARS } from "../../lib/types";
 import { Button } from "./Button";
 
@@ -18,6 +18,7 @@ interface Props {
 
 /** Note editor: Enter saves (Shift+Enter breaks the line), Esc cancels. Shared by notch and report. */
 export function NoteField({ initial = "", onSave, onCancel, cancelLabel, autoFocus, textareaRef, className = "", onMouseDown }: Props) {
+  const L = useT();
   const [text, setText] = useState(initial);
   const own = useRef<HTMLTextAreaElement | null>(null);
   const setRef = (el: HTMLTextAreaElement | null) => {
@@ -39,11 +40,11 @@ export function NoteField({ initial = "", onSave, onCancel, cancelLabel, autoFoc
     <div className={className}>
       <textarea
         ref={setRef}
-        aria-label={ptBR.ui.note}
+        aria-label={L.ui.note}
         rows={2}
         maxLength={MAX_NOTE_CHARS}
         value={text}
-        placeholder={ptBR.ui.notePlaceholder}
+        placeholder={L.ui.notePlaceholder}
         spellCheck={false}
         onChange={(e) => setText(e.target.value)}
         onMouseDown={onMouseDown}
@@ -62,7 +63,7 @@ export function NoteField({ initial = "", onSave, onCancel, cancelLabel, autoFoc
       />
       <div className="mt-2 flex justify-end gap-2">
         <Button variant="ghost" size="sm" onClick={onCancel}>{cancelLabel}</Button>
-        <Button variant="primary" size="sm" onClick={save}>{ptBR.ui.save}</Button>
+        <Button variant="primary" size="sm" onClick={save}>{L.ui.save}</Button>
       </div>
     </div>
   );

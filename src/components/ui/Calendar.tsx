@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ptBR } from "../../i18n/pt-BR";
+import { useT } from "../../i18n";
 import { dayLabel } from "../../lib/format";
 
 interface Props {
@@ -14,6 +14,7 @@ interface Props {
 const pad = (n: number) => String(n).padStart(2, "0");
 
 export function Calendar({ month, selected, onToggle, onMonthChange }: Props) {
+  const L = useT();
   const [shown, setShown] = useState(month);
   useEffect(() => setShown(month), [month]);
 
@@ -33,14 +34,14 @@ export function Calendar({ month, selected, onToggle, onMonthChange }: Props) {
   return (
     <div className="w-[250px] p-1 text-text">
       <div className="mb-1.5 flex items-center justify-between">
-        <button type="button" aria-label={ptBR.ui.prevMonth} onClick={() => go(-1)} className={navBtn}>‹</button>
+        <button type="button" aria-label={L.ui.prevMonth} onClick={() => go(-1)} className={navBtn}>‹</button>
         <span className="font-medium capitalize">
-          {ptBR.monthsLong[mo - 1]} {y}
+          {L.monthsLong[mo - 1]} {y}
         </span>
-        <button type="button" aria-label={ptBR.ui.nextMonth} onClick={() => go(1)} className={navBtn}>›</button>
+        <button type="button" aria-label={L.ui.nextMonth} onClick={() => go(1)} className={navBtn}>›</button>
       </div>
       <div className="grid grid-cols-7 gap-0.5 text-center text-xs">
-        {ptBR.weekdaysInitial.map((w, i) => (
+        {L.weekdaysInitial.map((w, i) => (
           <div key={i} className="py-1 text-dim">{w}</div>
         ))}
         {Array.from({ length: lead }, (_, i) => <div key={`b${i}`} />)}

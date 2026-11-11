@@ -1,4 +1,4 @@
-import { ptBR } from "../../i18n/pt-BR";
+import { useT } from "../../i18n";
 
 interface Props {
   value: number;
@@ -12,6 +12,7 @@ interface Props {
 }
 
 export function Stepper({ value, step, min, max, format, onChange, compact = false }: Props) {
+  const L = useT();
   const set = (v: number) => onChange(Math.min(max, Math.max(min, v)));
   const base =
     "flex-none cursor-pointer select-none text-center text-mute outline-none hover:bg-raise2 hover:text-text focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent2 disabled:pointer-events-none disabled:opacity-40";
@@ -25,7 +26,7 @@ export function Stepper({ value, step, min, max, format, onChange, compact = fal
       }}
       className={`items-center overflow-hidden ${compact ? "flex w-full min-w-0 rounded-lg bg-win" : "inline-flex rounded-[10px] bg-raise"}`}
     >
-      <button type="button" aria-label={ptBR.ui.decrease} disabled={value <= min} onClick={() => set(value - step)} className={btn}>−</button>
+      <button type="button" aria-label={L.ui.decrease} disabled={value <= min} onClick={() => set(value - step)} className={btn}>−</button>
       <b
         role="spinbutton"
         aria-valuenow={value}
@@ -35,7 +36,7 @@ export function Stepper({ value, step, min, max, format, onChange, compact = fal
       >
         {format ? format(value) : value}
       </b>
-      <button type="button" aria-label={ptBR.ui.increase} disabled={value >= max} onClick={() => set(value + step)} className={btn}>+</button>
+      <button type="button" aria-label={L.ui.increase} disabled={value >= max} onClick={() => set(value + step)} className={btn}>+</button>
     </div>
   );
 }

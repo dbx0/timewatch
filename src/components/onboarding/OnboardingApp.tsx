@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { ptBR } from "../../i18n/pt-BR";
+import { LANGS, LANGUAGE_NAMES, useLang, useT, type LanguagePref } from "../../i18n";
 import * as api from "../../lib/api";
 import type { Settings } from "../../lib/types";
 import { toast } from "../../stores/toast";
 import { Button } from "../ui/Button";
+import { Dropdown } from "../ui/Dropdown";
 import { ToastHost } from "../ui/Toast";
 import { StepLunch } from "./StepLunch";
 import { StepProjects, type DraftProject } from "./StepProjects";
@@ -12,10 +13,12 @@ import { StepStart } from "./StepStart";
 import { StepWelcome } from "./StepWelcome";
 import { StepWorkday } from "./StepWorkday";
 
-const t = ptBR.onboarding;
 const STEPS = 6;
 
 export function OnboardingApp() {
+  const L = useT();
+  const t = L.onboarding;
+  const lang = useLang((s) => s.lang);
   const [step, setStep] = useState(0);
   const [projects, setProjects] = useState<DraftProject[]>([]);
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -59,6 +62,21 @@ export function OnboardingApp() {
 
   return (
     <div data-view="onboarding" className="flex h-full flex-col bg-win px-[34px] pb-6 pt-[30px] text-[14px] text-text">
+      {step === 0 && settings && (
+        <div className="-mt-3 flex flex-none justify-end">
+          <Dropdown<LanguagePref>
+            ariaLabel={L.language.label}
+            value={settings.language}
+            options={[
+              { value: "system", label: L.language.system },
+              ...LANGS.map((l) => ({ value: l, label: LANGUAGE_NAMES[l] })),
+            ]}
+            renderValue={() => <span>{LANGUAGE_NAMES[lang]}</span>}
+            onChange={(v) => update({ language: v })}
+            className="px-2 py-1 text-[13px]"
+          />
+        </div>
+      )}
       {/* -mx/px: room so focus rings at the edges are not clipped by the scroller. */}
       <div className="-mx-1.5 flex-1 overflow-auto px-1.5 pb-1">
         {step === 0 && <StepWelcome onNext={next} onSkip={() => run(api.skipOnboarding())} />}

@@ -1,4 +1,4 @@
-import { ptBR } from "../../i18n/pt-BR";
+import { useT } from "../../i18n";
 import { dur, hm } from "../../lib/format";
 import type { AbsenceResolution, Project } from "../../lib/types";
 import { useTracker } from "../../stores/tracker";
@@ -6,10 +6,9 @@ import { Button } from "../ui/Button";
 import { resolve } from "./actions";
 import { Dot } from "./icons";
 
-const s = ptBR.notch;
-
 /** Replaces the panel while `snapshot.pendingAbsence` exists. */
 export function AbsencePrompt({ onResolved }: { onResolved?: () => void }) {
+  const s = useT().notch;
   const snapshot = useTracker((st) => st.snapshot);
   const a = snapshot?.pendingAbsence;
   if (!snapshot || !a) return null;

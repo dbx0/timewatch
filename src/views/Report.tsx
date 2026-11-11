@@ -1,10 +1,11 @@
 import { ReportApp } from "../components/report/ReportApp";
 import { WindowFrame } from "../components/ui/WindowFrame";
-import { ptBR } from "../i18n/pt-BR";
+import { useT } from "../i18n";
 
 export function Report() {
+  const L = useT();
   return (
-    <WindowFrame title={ptBR.titlebar.report}>
+    <WindowFrame title={L.titlebar.report}>
       <ReportApp />
     </WindowFrame>
   );

@@ -1,11 +1,10 @@
-import { ptBR } from "../../i18n/pt-BR";
+import { useT } from "../../i18n";
 import { Stepper } from "../ui/Stepper";
 import { Toggle } from "../ui/Toggle";
 import { Row, type SectionProps } from "./Row";
 
-const t = ptBR.settings;
-
 export function AbsenceSection({ settings, update }: SectionProps) {
+  const t = useT().settings;
   return (
     <>
       <h3 className="mb-1 text-lg font-semibold">{t.absenceTitle}</h3>

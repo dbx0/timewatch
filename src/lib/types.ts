@@ -1,5 +1,7 @@
 // Mirrors the serialized Rust types (camelCase). Dates are `YYYY-MM-DD`, times are UTC epoch ms.
 
+import type { LanguagePref } from "../i18n/types";
+
 export type Ms = number;
 export type IsoDate = string;
 
@@ -50,6 +52,8 @@ export interface Settings {
   shortcut: string;
   overlayMonitor: string | null;
   onboarded: boolean;
+  /** `system` follows the OS locale. */
+  language: LanguagePref;
 }
 
 export type ClockStatus = "idle" | "running" | "paused";

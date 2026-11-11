@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Popover } from "./Popover";
-import { ptBR } from "../../i18n/pt-BR";
+import { useT } from "../../i18n";
 
 interface Props {
   value: string;
@@ -32,6 +32,7 @@ function parseTyped(d: string): [number, number] | null {
  * When focused, typing digits sets the time directly.
  */
 export function TimePicker({ value, onChange, className = "", minuteStep = 5 }: Props) {
+  const L = useT();
   const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null);
   const [open, setOpen] = useState(false);
   const [[h, m], setHM] = useState<[number, number]>(parse(value));
@@ -156,17 +157,17 @@ export function TimePicker({ value, onChange, className = "", minuteStep = 5 }: 
       </button>
       <Popover anchor={anchor} open={open} onClose={close}>
         <div ref={panelRef} data-testid="timepicker-panel" tabIndex={-1} onKeyDown={onPanelKey} className="flex gap-1 outline-none">
-          <div ref={hRef} role="listbox" aria-label={ptBR.ui.hour} className={column}>
+          <div ref={hRef} role="listbox" aria-label={L.ui.hour} className={column}>
             {HOURS.map((n) =>
-              item(n, n === h, col === 0, `${ptBR.ui.hour} ${pad(n)}`, () => {
+              item(n, n === h, col === 0, `${L.ui.hour} ${pad(n)}`, () => {
                 setHM([n, m]);
                 setCol(1);
               }),
             )}
           </div>
           <div className="w-px flex-none bg-line" aria-hidden />
-          <div ref={mRef} role="listbox" aria-label={ptBR.ui.minute} className={column}>
-            {minutes.map((n) => item(n, n === m, col === 1, `${ptBR.ui.minute} ${pad(n)}`, () => commit(h, n)))}
+          <div ref={mRef} role="listbox" aria-label={L.ui.minute} className={column}>
+            {minutes.map((n) => item(n, n === m, col === 1, `${L.ui.minute} ${pad(n)}`, () => commit(h, n)))}
           </div>
         </div>
       </Popover>

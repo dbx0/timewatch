@@ -1,15 +1,14 @@
 import { useEffect, useState } from "react";
 import { availableMonitors } from "@tauri-apps/api/window";
-import { ptBR } from "../../i18n/pt-BR";
+import { LANGS, LANGUAGE_NAMES, useT, type LanguagePref } from "../../i18n";
 import { Dropdown } from "../ui/Dropdown";
 import { Segmented } from "../ui/Segmented";
 import { Toggle } from "../ui/Toggle";
 import { Row, type SectionProps } from "./Row";
 import { formatShortcut, isMac, shortcutFromEvent } from "./shortcut";
 
-const t = ptBR.settings;
-
 function ShortcutRecorder({ value, onChange }: { value: string; onChange: (s: string) => void }) {
+  const t = useT().settings;
   const [recording, setRecording] = useState(false);
   return (
     <div
@@ -47,6 +46,8 @@ function ShortcutRecorder({ value, onChange }: { value: string; onChange: (s: st
 }
 
 export function GeneralSection({ settings, update }: SectionProps) {
+  const L = useT();
+  const t = L.settings;
   const [names, setNames] = useState<string[]>([]);
   useEffect(() => {
     let off = false;
@@ -69,7 +70,18 @@ export function GeneralSection({ settings, update }: SectionProps) {
 
   return (
     <>
-      <h3 className="mb-1 text-lg font-semibold">{ptBR.settings.nav.general}</h3>
+      <h3 className="mb-1 text-lg font-semibold">{L.settings.nav.general}</h3>
+      <Row title={L.language.label} hint={L.language.hint}>
+        <Dropdown<LanguagePref>
+          ariaLabel={L.language.label}
+          value={settings.language}
+          options={[
+            { value: "system", label: L.language.system },
+            ...LANGS.map((l) => ({ value: l, label: LANGUAGE_NAMES[l] })),
+          ]}
+          onChange={(v) => update({ language: v })}
+        />
+      </Row>
       <Row title={t.rounding} hint={t.roundingHint}>
         <Segmented
           ariaLabel={t.rounding}
@@ -90,6 +102,7 @@ export function GeneralSection({ settings, update }: SectionProps) {
       </Row>
       <Row title={t.monitor} hint={t.monitorHint}>
         <Dropdown
+          ariaLabel={t.monitor}
           value={stored ?? ""}
           options={options}
           onChange={(v) => update({ overlayMonitor: v === "" ? null : v })}

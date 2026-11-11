@@ -1,10 +1,11 @@
 import { SettingsApp } from "../components/settings/SettingsApp";
 import { WindowFrame } from "../components/ui/WindowFrame";
-import { ptBR } from "../i18n/pt-BR";
+import { useT } from "../i18n";
 
 export function Settings() {
+  const L = useT();
   return (
-    <WindowFrame title={ptBR.titlebar.settings}>
+    <WindowFrame title={L.titlebar.settings}>
       <SettingsApp />
     </WindowFrame>
   );

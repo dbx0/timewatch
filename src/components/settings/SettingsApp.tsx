@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ptBR } from "../../i18n/pt-BR";
+import { useT } from "../../i18n";
 import * as api from "../../lib/api";
 import type { Project, Settings } from "../../lib/types";
 import { toast } from "../../stores/toast";
@@ -16,6 +16,7 @@ type Section = "general" | "workday" | "lunch" | "absence" | "projects";
 const SECTIONS: Section[] = ["general", "workday", "lunch", "absence", "projects"];
 
 export function SettingsApp() {
+  const L = useT();
   const [section, setSection] = useState<Section>("general");
   const [settings, setSettings] = useState<Settings | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -73,7 +74,7 @@ export function SettingsApp() {
               section === k ? "bg-raise2 text-text" : "text-mute hover:bg-raise hover:text-text"
             }`}
           >
-            {ptBR.settings.nav[k]}
+            {L.settings.nav[k]}
           </div>
         ))}
       </nav>

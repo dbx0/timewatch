@@ -1,14 +1,14 @@
-import { ptBR } from "../../i18n/pt-BR";
+import { useT } from "../../i18n";
 import type { Project } from "../../lib/types";
 import { useTracker } from "../../stores/tracker";
 import { switchTo } from "./actions";
 import { ProjectRow, useTodayById } from "./ProjectSearch";
 
-const s = ptBR.notch;
 const link = "cursor-pointer rounded-md text-accent outline-none hover:underline focus-visible:ring-2 focus-visible:ring-accent2";
 
 /** All active projects grouped by client. */
 export function AllProjects({ onBack, onCreate }: { onBack: () => void; onCreate: () => void }) {
+  const s = useT().notch;
   const snapshot = useTracker((st) => st.snapshot);
   const todayOf = useTodayById();
   if (!snapshot) return null;

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { save } from "@tauri-apps/plugin-dialog";
 import * as api from "../../lib/api";
 import { errMsg } from "../../lib/dates";
-import { ptBR } from "../../i18n/pt-BR";
+import { useT } from "../../i18n";
 import type { ExportFormat, Grouping, IsoDate } from "../../lib/types";
 import { toast } from "../../stores/toast";
 import { Popover } from "../ui/Popover";
@@ -13,9 +13,8 @@ interface Props {
   grouping: Grouping;
 }
 
-const t = ptBR.report;
-
 export function ExportMenu({ weekStart, grouping }: Props) {
+  const t = useT().report;
   const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null);
   const [open, setOpen] = useState(false);
   const [detailed, setDetailed] = useState(false);
@@ -24,7 +23,7 @@ export function ExportMenu({ weekStart, grouping }: Props) {
     setOpen(false);
     try {
       const path = await save({
-        defaultPath: `horas_${weekStart}.${format}`,
+        defaultPath: `${t.exportFileName}_${weekStart}.${format}`,
         filters: [{ name: format === "csv" ? "CSV" : "HTML", extensions: [format] }],
       });
       if (!path) return;

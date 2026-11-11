@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ptBR } from "../../i18n/pt-BR";
+import { useT } from "../../i18n";
 import { toast } from "../../stores/toast";
 import { useTracker } from "../../stores/tracker";
 import { Button } from "../ui/Button";
@@ -7,7 +7,6 @@ import { ColorPicker, PROJECT_PALETTE } from "../ui/ColorPicker";
 import { createAndStart } from "./actions";
 import { focusWithKeyboard } from "./keyboard";
 
-const s = ptBR.notch;
 const input =
   "w-full rounded-[10px] border border-transparent bg-raise px-3 py-2.5 text-text outline-none transition placeholder:text-dim focus:border-accent focus:bg-raise2";
 const group = "mb-1.5 ml-0.5 mt-3.5 text-[11px] uppercase tracking-[.06em] text-dim";
@@ -25,6 +24,7 @@ export function CreateProject({ initialName, onBack, onDone }: {
   onBack: () => void;
   onDone: () => void;
 }) {
+  const s = useT().notch;
   const projects = useTracker((st) => st.snapshot?.projects ?? []);
   const clients = [...new Set(projects.map((p) => p.client))].sort((a, b) => a.localeCompare(b, "pt-BR"));
   const [name, setName] = useState(initialName);

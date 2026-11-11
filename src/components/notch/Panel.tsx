@@ -1,5 +1,5 @@
 import { useEffect, useState, type Ref } from "react";
-import { ptBR } from "../../i18n/pt-BR";
+import { useT } from "../../i18n";
 import { openWindow } from "../../lib/api";
 import { clock } from "../../lib/format";
 import type { WindowKind } from "../../lib/types";
@@ -9,8 +9,6 @@ import { DayProgress } from "./DayProgress";
 import { CalIcon, Dot, GearIcon, PauseIcon, PlayIcon, StopIcon } from "./icons";
 import { isTyping } from "./keyboard";
 import { ProjectSearch } from "./ProjectSearch";
-
-const s = ptBR.notch;
 
 interface Props {
   onCreate: (name: string) => void;
@@ -24,6 +22,7 @@ const round =
   "flex h-11 w-11 cursor-pointer items-center justify-center rounded-full outline-none transition active:scale-[.92] focus-visible:ring-2 focus-visible:ring-accent2";
 
 export function Panel({ onCreate, onAll, onClose, inputRef }: Props) {
+  const s = useT().notch;
   const snapshot = useTracker((st) => st.snapshot);
   const sessionMs = useTracker(liveSessionMs);
   const todayMs = useTracker(liveTodayMs);

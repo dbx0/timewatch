@@ -1,4 +1,9 @@
 export const ptBR = {
+  language: {
+    label: "Idioma",
+    hint: "Muda o app inteiro na hora, inclusive o menu da bandeja e as exportações.",
+    system: "Automático (idioma do sistema)",
+  },
   ui: {
     ok: "OK",
     undo: "Desfazer",
@@ -121,6 +126,7 @@ export const ptBR = {
     back: "Voltar",
     next: "Continuar",
     steps: (n: number, total: number) => `Passo ${n} de ${total}`,
+    welcomeDemo: "Migração SAP",
     welcomeTitle: "Saiba pra onde vão suas horas",
     welcomeLead:
       "O Timewatch fica no notch e marca em qual projeto você está. Na sexta, as horas por projeto e cliente já estão prontas pra lançar.",
@@ -184,6 +190,7 @@ export const ptBR = {
     exportCsvHint: "pra planilha",
     exportHtml: "HTML",
     exportHtmlHint: "relatório pra imprimir ou enviar",
+    exportFileName: "horas",
     detail: "Detalhar início e fim de cada registro",
     exported: (f: string) => `${f} exportado`,
     totalWorked: "Total trabalhado",
@@ -227,6 +234,7 @@ export const ptBR = {
     noteNone: (ref: string) => `Nada rodando às ${ref}, então nenhum almoço foi descontado.`,
     weekdaysLong: ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"],
   },
+  dayMonth: (d: number, month: string) => `${d} ${month}`,
   weekdaysShort: ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"],
   weekdaysInitial: ["S", "T", "Q", "Q", "S", "S", "D"],
   monthsShort: ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"],

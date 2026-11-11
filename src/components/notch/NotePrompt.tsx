@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { ptBR } from "../../i18n/pt-BR";
+import { useT } from "../../i18n";
 import { dur, hm } from "../../lib/format";
 import { useNotePrompt } from "../../stores/notePrompt";
 import { useTracker } from "../../stores/tracker";
@@ -8,10 +8,9 @@ import { saveNote } from "./actions";
 import { Dot } from "./icons";
 import { focusWithKeyboard } from "./keyboard";
 
-const s = ptBR.notch;
-
 /** Replaces the panel after a pause/stop from the notch: "what did you do in that block?". */
 export function NotePrompt({ onDone }: { onDone: () => void }) {
+  const s = useT().notch;
   const c = useNotePrompt((st) => st.closed);
   const project = useTracker((st) => st.snapshot?.projects.find((p) => p.id === c?.projectId));
   const field = useRef<HTMLTextAreaElement>(null);

@@ -1,11 +1,9 @@
 import * as api from "../../lib/api";
 import type { AbsenceResolution, Project } from "../../lib/types";
-import { ptBR } from "../../i18n/pt-BR";
+import { getT } from "../../i18n";
 import { useNotePrompt } from "../../stores/notePrompt";
 import { toast } from "../../stores/toast";
 import { useTracker } from "../../stores/tracker";
-
-const t = ptBR.toast;
 
 /** Runs a backend action; failures surface as a toast with the backend message. */
 async function run<T>(f: () => Promise<T>): Promise<T | undefined> {
@@ -18,6 +16,7 @@ async function run<T>(f: () => Promise<T>): Promise<T | undefined> {
 }
 
 export async function undo() {
+  const t = getT().toast;
   const ok = await run(api.undo);
   if (ok !== undefined) toast(ok ? t.undone : t.nothingToUndo);
 }
@@ -25,6 +24,7 @@ export async function undo() {
 export const undoable = { undo: () => void undo() };
 
 export async function switchTo(p: Project) {
+  const t = getT().toast;
   const s = useTracker.getState().snapshot;
   if (s?.status === "running" && s.sessionProject?.id === p.id) return;
   if (await run(() => api.switchProject(p.id).then(() => true))) toast(t.switched(p.name));
@@ -32,6 +32,7 @@ export async function switchTo(p: Project) {
 
 /** Pausing from the notch asks for a note about the closed block (switching does not). */
 export async function pause() {
+  const t = getT().toast;
   const r = await run(() => api.pauseClock().then((closed) => ({ closed })));
   if (!r) return;
   toast(t.paused);
@@ -39,6 +40,7 @@ export async function pause() {
 }
 
 export async function resume() {
+  const t = getT().toast;
   if (await run(() => api.resumeClock().then(() => true))) toast(t.resumed);
 }
 
@@ -49,6 +51,7 @@ export async function togglePause() {
 }
 
 export async function stop() {
+  const t = getT().toast;
   const r = await run(() => api.stopClock().then((closed) => ({ closed })));
   if (!r) return;
   toast(t.stopped, undoable);
@@ -61,6 +64,7 @@ export async function saveNote(id: number, note: string | null): Promise<boolean
 }
 
 export async function resolve(r: AbsenceResolution, moveName?: string): Promise<boolean> {
+  const t = getT().toast;
   const ok = await run(() => api.resolveAbsence(r).then(() => true));
   if (!ok) return false;
   const msg =

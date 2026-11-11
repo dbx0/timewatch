@@ -14,13 +14,14 @@ interface Props<T> {
   onChange: (v: T) => void;
   renderValue?: (o: DropdownOption<T> | undefined) => ReactNode;
   className?: string;
+  ariaLabel?: string;
 }
 
 function Dot({ color }: { color?: string }) {
   return color ? <i className="inline-block h-2 w-2 flex-none rounded-full" style={{ background: color }} /> : null;
 }
 
-export function Dropdown<T extends string | number>({ value, options, onChange, renderValue, className = "" }: Props<T>) {
+export function Dropdown<T extends string | number>({ value, options, onChange, renderValue, className = "", ariaLabel }: Props<T>) {
   const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null);
   const [open, setOpen] = useState(false);
   const selIdx = options.findIndex((o) => o.value === value);
@@ -73,6 +74,7 @@ export function Dropdown<T extends string | number>({ value, options, onChange, 
       <button
         ref={setAnchor}
         type="button"
+        aria-label={ariaLabel}
         aria-haspopup="listbox"
         aria-expanded={open}
         onClick={() => (open ? close() : openList())}

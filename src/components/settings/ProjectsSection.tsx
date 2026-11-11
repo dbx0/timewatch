@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { ptBR } from "../../i18n/pt-BR";
+import { useT } from "../../i18n";
 import * as api from "../../lib/api";
 import type { Project } from "../../lib/types";
 import { toast } from "../../stores/toast";
@@ -9,10 +9,10 @@ import { ColorPicker, PROJECT_PALETTE } from "../ui/ColorPicker";
 import { Popover } from "../ui/Popover";
 import { Toggle } from "../ui/Toggle";
 
-const t = ptBR.settings;
 const txt = textField;
 
 function ColorDot({ project, onPick }: { project: Project; onPick: (c: string) => void }) {
+  const t = useT().settings;
   const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null);
   const [open, setOpen] = useState(false);
   return (
@@ -34,6 +34,7 @@ function ColorDot({ project, onPick }: { project: Project; onPick: (c: string) =
 }
 
 function Name({ project, onRename }: { project: Project; onRename: (n: string) => void }) {
+  const t = useT().settings;
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(project.name);
   const done = useRef(false);
@@ -82,6 +83,7 @@ function Name({ project, onRename }: { project: Project; onRename: (n: string) =
 }
 
 export function ProjectsSection({ projects, reload }: { projects: Project[]; reload: () => void }) {
+  const t = useT().settings;
   const [client, setClient] = useState("");
   const [name, setName] = useState("");
   const nameRef = useRef<HTMLInputElement>(null);

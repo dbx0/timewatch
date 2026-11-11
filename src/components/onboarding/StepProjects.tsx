@@ -1,10 +1,9 @@
 import { useRef, useState } from "react";
-import { ptBR } from "../../i18n/pt-BR";
+import { useT } from "../../i18n";
 import { PROJECT_PALETTE } from "../ui/ColorPicker";
 import { Button } from "../ui/Button";
 import { textField } from "../ui/field";
 
-const t = ptBR.onboarding;
 const txt = textField;
 
 export interface DraftProject {
@@ -18,6 +17,8 @@ interface Props {
 }
 
 export function StepProjects({ projects, onChange }: Props) {
+  const L = useT();
+  const t = L.onboarding;
   const [client, setClient] = useState("");
   const [name, setName] = useState("");
   const nameRef = useRef<HTMLInputElement>(null);
@@ -29,7 +30,7 @@ export function StepProjects({ projects, onChange }: Props) {
       nameRef.current?.focus();
       return;
     }
-    onChange([...projects, { name: n, client: client.trim() || ptBR.settings.noClient }]);
+    onChange([...projects, { name: n, client: client.trim() || L.settings.noClient }]);
     setName("");
     nameRef.current?.focus();
   };
@@ -46,7 +47,7 @@ export function StepProjects({ projects, onChange }: Props) {
       <p className="mb-5 text-[15px] text-mute">{t.projectsLead}</p>
       <div className="flex gap-2">
         <input
-          aria-label="Cliente"
+          aria-label={L.settings.clientPh}
           className={`${txt} min-w-0 flex-1`}
           placeholder={t.clientPh}
           value={client}
@@ -56,7 +57,7 @@ export function StepProjects({ projects, onChange }: Props) {
         <input
           ref={nameRef}
           autoFocus
-          aria-label="Projeto"
+          aria-label={L.settings.projectPh}
           className={`${txt} min-w-0 flex-[1.3]`}
           placeholder={t.projectPh}
           value={name}

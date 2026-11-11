@@ -1,10 +1,11 @@
 import { OnboardingApp } from "../components/onboarding/OnboardingApp";
 import { WindowFrame } from "../components/ui/WindowFrame";
-import { ptBR } from "../i18n/pt-BR";
+import { useT } from "../i18n";
 
 export function Onboarding() {
+  const L = useT();
   return (
-    <WindowFrame title={ptBR.titlebar.onboarding} resizable={false}>
+    <WindowFrame title={L.titlebar.onboarding} resizable={false}>
       <OnboardingApp />
     </WindowFrame>
   );

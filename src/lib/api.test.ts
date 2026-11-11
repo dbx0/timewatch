@@ -23,6 +23,20 @@ describe("api", () => {
     expect(invoke).toHaveBeenLastCalledWith("set_entry_note", { id: 4, note: null });
   });
 
+  it("getLanguage and onLanguage use the backend command and event", async () => {
+    invoke.mockResolvedValueOnce("es");
+    await expect(api.getLanguage()).resolves.toBe("es");
+    expect(invoke).toHaveBeenLastCalledWith("get_language");
+    const cb = vi.fn();
+    listen.mockImplementationOnce((_name: string, h: (e: { payload: unknown }) => void) => {
+      h({ payload: "en" });
+      return Promise.resolve(() => {});
+    });
+    await api.onLanguage(cb);
+    expect(listen).toHaveBeenLastCalledWith("settings://language", expect.any(Function));
+    expect(cb).toHaveBeenCalledWith("en");
+  });
+
   it("stopClock resolves to the closed block", async () => {
     invoke.mockResolvedValueOnce({ id: 1, projectId: 2, start: 3, end: 4 });
     await expect(api.stopClock()).resolves.toEqual({ id: 1, projectId: 2, start: 3, end: 4 });

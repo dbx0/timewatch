@@ -1,8 +1,9 @@
-import { ptBR } from "../../i18n/pt-BR";
+import { useT } from "../../i18n";
 import { dec, dur } from "../../lib/format";
 
 /** Today's bar: normal time in accent, overtime in accent2. */
 export function DayProgress({ todayMs, jornadaMs }: { todayMs: number; jornadaMs: number }) {
+  const L = useT();
   let normal: number;
   let extra: number;
   if (jornadaMs <= 0) {
@@ -20,8 +21,8 @@ export function DayProgress({ todayMs, jornadaMs }: { todayMs: number; jornadaMs
         <div className="h-full bg-accent2" style={{ width: `${extra}%` }} />
       </div>
       <div className="mt-[5px] flex justify-between text-xs text-mute">
-        <span>{ptBR.notch.today(dur(todayMs))}</span>
-        <span>{jornadaMs > 0 ? ptBR.notch.jornada(dec(jornadaMs)) : ptBR.notch.noJornada}</span>
+        <span>{L.notch.today(dur(todayMs))}</span>
+        <span>{jornadaMs > 0 ? L.notch.jornada(dec(jornadaMs)) : L.notch.noJornada}</span>
       </div>
     </div>
   );

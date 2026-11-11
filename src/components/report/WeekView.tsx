@@ -3,7 +3,7 @@ import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import * as api from "../../lib/api";
 import { addDays, errMsg, mondayOf, toIso } from "../../lib/dates";
 import { dayLabel, dec, weekdayShort } from "../../lib/format";
-import { ptBR } from "../../i18n/pt-BR";
+import { useT, getT } from "../../i18n";
 import type { Cell, Grouping, IsoDate, WeekReport } from "../../lib/types";
 import { toast } from "../../stores/toast";
 import { Button } from "../ui/Button";
@@ -21,9 +21,8 @@ interface Props {
   onOpenDay: (day: IsoDate) => void;
 }
 
-const t = ptBR.report;
-
 async function copy(value: string) {
+  const t = getT().report;
   try {
     await writeText(value);
     toast(t.copied(value));
@@ -33,6 +32,7 @@ async function copy(value: string) {
 }
 
 export function WeekView({ weekStart, grouping, today, reloadKey, onWeekChange, onGroupingChange, onOpenDay }: Props) {
+  const t = useT().report;
   const [report, setReport] = useState<WeekReport | null>(null);
   const seq = useRef(0);
 
@@ -179,6 +179,7 @@ export function WeekView({ weekStart, grouping, today, reloadKey, onWeekChange, 
 }
 
 function TotalCell({ cell, top }: { cell: Cell; top?: boolean }) {
+  const t = useT().report;
   const border = top ? "border-[#34343e]" : "border-[#1d1d24]";
   if (!cell.totalMs) return <td className={`h-11 border-t ${border} text-center text-dim`}>·</td>;
   return (

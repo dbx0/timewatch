@@ -1,13 +1,11 @@
 import type { Ref } from "react";
-import { ptBR } from "../../i18n/pt-BR";
+import { useT } from "../../i18n";
 import { dur } from "../../lib/format";
 import type { Project } from "../../lib/types";
 import { liveDelta, useTracker } from "../../stores/tracker";
 import { switchTo } from "./actions";
 import { Dot, SearchIcon } from "./icons";
 import { focusWithKeyboard } from "./keyboard";
-
-const s = ptBR.notch;
 
 interface Props {
   query: string;
@@ -62,6 +60,7 @@ export function ProjectRow({ p, today, badge, current, onPick }: {
 const subRow = "flex w-full cursor-pointer items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-left text-mute outline-none hover:bg-raise focus-visible:ring-2 focus-visible:ring-accent2";
 
 export function ProjectSearch({ query, onQueryChange, onCreate, onAll, onSwitched, inputRef }: Props) {
+  const s = useT().notch;
   const snapshot = useTracker((st) => st.snapshot);
   const todayOf = useTodayById();
   if (!snapshot) return null;

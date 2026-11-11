@@ -24,6 +24,7 @@ const base: Settings = {
   shortcut: "Alt+Space",
   overlayMonitor: null,
   onboarded: false,
+  language: "system",
 };
 const flush = () => act(async () => {});
 const click = (name: string | RegExp) => fireEvent.click(screen.getByRole("button", { name }));
@@ -53,6 +54,17 @@ beforeEach(() => {
 });
 
 describe("OnboardingApp", () => {
+  it("first step has a language picker showing the current language", async () => {
+    await mount();
+    const picker = screen.getByRole("button", { name: "Idioma" });
+    expect(picker.textContent).toContain("Português");
+    fireEvent.click(picker);
+    fireEvent.click(screen.getByText("Español"));
+    expect(api.setSettings).toHaveBeenCalledWith({ ...base, language: "es" });
+    click("Configurar (1 min)");
+    expect(screen.queryByRole("button", { name: "Idioma" })).toBeNull();
+  });
+
   it("Pular only skips, creating nothing", async () => {
     await mount();
     click("Pular");

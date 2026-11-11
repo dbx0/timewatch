@@ -1,8 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import { setLang } from "../i18n";
 import { clock, dayLabel, dec, dur, hm, roundMs, weekdayShort } from "./format";
 
 const H = 3_600_000;
 const M = 60_000;
+
+afterEach(() => setLang("pt-BR"));
 
 describe("format", () => {
   it("dec mirrors fmt_hours", () => {
@@ -12,6 +15,25 @@ describe("format", () => {
     expect(dec(H / 3)).toBe("0,33");
     expect(dec(2 * H / 3)).toBe("0,67");
     expect(dec(0)).toBe("");
+  });
+  it("dec uses the language's decimal separator", () => {
+    expect(dec(5.5 * H, "en")).toBe("5.5");
+    expect(dec(7.25 * H, "en")).toBe("7.25");
+    expect(dec(-H / 2, "en")).toBe("-0.5");
+    expect(dec(5.5 * H, "es")).toBe("5,5");
+    expect(dec(5.5 * H, "pt-BR")).toBe("5,5");
+    setLang("en");
+    expect(dec(5.5 * H)).toBe("5.5");
+    setLang("es");
+    expect(dec(5.5 * H)).toBe("5,5");
+  });
+  it("day labels per language", () => {
+    setLang("en");
+    expect(dayLabel("2026-11-10")).toBe("Nov 10");
+    expect(weekdayShort(0)).toBe("Mon");
+    setLang("es");
+    expect(dayLabel("2026-11-10")).toBe("10 nov");
+    expect(weekdayShort(0)).toBe("Lun");
   });
   it("dur", () => {
     expect(dur(5 * H + 40 * M)).toBe("5h 40m");

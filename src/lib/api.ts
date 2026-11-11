@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import type { Lang } from "../i18n/types";
 import type {
   AbsenceResolution,
   ClosedEntry,
@@ -53,6 +54,8 @@ export const unmarkLunch = (day: IsoDate) => invoke<void>("unmark_lunch", { day 
 
 export const getSettings = () => invoke<Settings>("get_settings");
 export const setSettings = (settings: Settings) => invoke<void>("set_settings", { settings });
+/** The resolved UI language (the stored choice, or the OS language for `system`). */
+export const getLanguage = () => invoke<Lang>("get_language");
 
 export const exportWeek = (
   weekStart: IsoDate,
@@ -74,6 +77,9 @@ export const getOverlayConfig = () => invoke<OverlayConfig | null>("get_overlay_
 
 export const onChanged = (cb: (snapshot: TrackerSnapshot) => void): Promise<UnlistenFn> =>
   listen<TrackerSnapshot>("tracker://changed", (e) => cb(e.payload));
+/** Emitted to every window when the resolved language changes. */
+export const onLanguage = (cb: (lang: Lang) => void): Promise<UnlistenFn> =>
+  listen<Lang>("settings://language", (e) => cb(e.payload));
 export const onTick = (cb: (now: Ms) => void): Promise<UnlistenFn> =>
   listen<{ now: Ms }>("tracker://tick", (e) => cb(e.payload.now));
 
