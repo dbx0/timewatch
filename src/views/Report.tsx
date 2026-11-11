@@ -1,3 +1,5 @@
+import { ReportApp } from "../components/report/ReportApp";
+
 export function Report() {
-  return <div data-view="report">report</div>;
+  return <ReportApp />;
 }
