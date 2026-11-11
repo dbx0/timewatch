@@ -225,7 +225,7 @@ pub fn set_settings(app: AppHandle, state: State<AppState>, settings: Settings) 
     }
     let autostart = settings.autostart;
     let new_shortcut = settings.shortcut.clone();
-    if let Err(e) = mutate(&app, &state, |t, _| t.set_settings(settings)) {
+    if let Err(e) = mutate(&app, &state, |t, _| t.set_user_settings(settings)) {
         if shortcut_changed {
             let _ = tray::apply_shortcut(&app, Some(&new_shortcut), &old.shortcut);
         }

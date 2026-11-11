@@ -291,6 +291,13 @@ impl Tracker {
         Ok(repo::set_meta(&self.db, META_SETTINGS, &s)?)
     }
 
+    /// Settings saved from the UI. `onboarded` is server-owned (only `finish_onboarding` /
+    /// skip change it): a Settings window opened before onboarding finished must not reset it.
+    pub fn set_user_settings(&mut self, mut s: Settings) -> Result<()> {
+        s.onboarded = self.settings()?.onboarded;
+        self.set_settings(s)
+    }
+
     pub fn clear_notice(&mut self) {
         self.notice = None;
     }

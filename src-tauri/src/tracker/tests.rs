@@ -613,3 +613,25 @@ fn serde_shapes() {
     assert_eq!(to_value(TrackerError::FutureEnd).unwrap(), json!("O registro não pode terminar no futuro"));
 }
 
+#[test]
+fn user_settings_never_change_onboarded() {
+    let (mut tr, _, _) = setup();
+    // A Settings window opened before onboarding finished holds `onboarded: false`.
+    let stale = tr.settings().unwrap();
+    assert!(!stale.onboarded);
+    let mut st = tr.settings().unwrap();
+    st.onboarded = true;
+    tr.set_settings(st).unwrap();
+    let mut edit = stale.clone();
+    edit.idle_min = 30;
+    tr.set_user_settings(edit).unwrap();
+    let got = tr.settings().unwrap();
+    assert!(got.onboarded);
+    assert_eq!(got.idle_min, 30);
+    // Nor can the client mark onboarding done.
+    let (mut tr, _, _) = setup();
+    let mut edit = tr.settings().unwrap();
+    edit.onboarded = true;
+    tr.set_user_settings(edit).unwrap();
+    assert!(!tr.settings().unwrap().onboarded);
+}
