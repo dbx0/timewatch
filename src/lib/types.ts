@@ -46,7 +46,23 @@ export type Grouping = "project" | "client";
 export type ExportFormat = "csv" | "html";
 export type LunchStatus = "marked" | "auto" | "pending" | "noneRunning" | "disabled";
 export type RowKind = "clientHeader" | "data";
-export type PillMode = "compact" | "expanded";
+/** `notch`: pill fits the MacBook notch; `strip`: thin collapsed strip (no notch). */
+export type PillMode = "notch" | "strip";
+
+/** Payload of `overlay://config`. */
+export interface OverlayConfig {
+  mode: PillMode;
+  /** Logical px; null without a notch. */
+  notchWidth: number | null;
+}
+
+/** Interactive overlay area, logical px relative to the overlay window. */
+export interface HitRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
 
 export interface Absence {
   start: Ms;

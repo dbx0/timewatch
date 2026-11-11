@@ -64,4 +64,43 @@ describe("api", () => {
     expect(listen.mock.calls[1][0]).toBe("tracker://changed");
     expect(un).toBe(unlisten);
   });
+
+  it("overlay commands pass their args", async () => {
+    await api.overlaySetHitRect({ x: 1, y: 2, w: 3, h: 4 });
+    expect(invoke).toHaveBeenCalledWith("overlay_set_hit_rect", { rect: { x: 1, y: 2, w: 3, h: 4 } });
+    await api.overlaySetHitRect(null);
+    expect(invoke).toHaveBeenCalledWith("overlay_set_hit_rect", { rect: null });
+    await api.overlaySetExpanded(false);
+    expect(invoke).toHaveBeenCalledWith("overlay_set_expanded", { expanded: false });
+    await api.overlayFocus();
+    expect(invoke).toHaveBeenCalledWith("overlay_focus");
+    await api.getOverlayConfig();
+    expect(invoke).toHaveBeenCalledWith("get_overlay_config");
+  });
+
+  it("overlay events unwrap the payload", async () => {
+    listen.mockResolvedValue(vi.fn());
+    const hover = vi.fn();
+    const expanded = vi.fn();
+    const config = vi.fn();
+    const focus = vi.fn();
+    await api.onOverlayHover(hover);
+    await api.onOverlayExpanded(expanded);
+    await api.onOverlayConfig(config);
+    await api.onOverlayFocusSearch(focus);
+    expect(listen.mock.calls.map((c) => c[0])).toEqual([
+      "overlay://hover",
+      "overlay://expanded",
+      "overlay://config",
+      "overlay://focus-search",
+    ]);
+    listen.mock.calls[0][1]({ payload: true });
+    listen.mock.calls[1][1]({ payload: false });
+    listen.mock.calls[2][1]({ payload: { mode: "notch", notchWidth: 185 } });
+    listen.mock.calls[3][1]({ payload: null });
+    expect(hover).toHaveBeenCalledWith(true);
+    expect(expanded).toHaveBeenCalledWith(false);
+    expect(config).toHaveBeenCalledWith({ mode: "notch", notchWidth: 185 });
+    expect(focus).toHaveBeenCalledTimes(1);
+  });
 });

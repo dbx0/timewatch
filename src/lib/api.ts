@@ -7,8 +7,10 @@ import type {
   EntryPatch,
   ExportFormat,
   Grouping,
+  HitRect,
   IsoDate,
   Ms,
+  OverlayConfig,
   Project,
   Settings,
   TrackerSnapshot,
@@ -57,7 +59,21 @@ export const exportWeek = (
 
 export const openWindow = (kind: WindowKind) => invoke<void>("open_window", { kind });
 
+export const overlaySetHitRect = (rect: HitRect | null) => invoke<void>("overlay_set_hit_rect", { rect });
+export const overlaySetExpanded = (expanded: boolean) => invoke<void>("overlay_set_expanded", { expanded });
+export const overlayFocus = () => invoke<void>("overlay_focus");
+export const getOverlayConfig = () => invoke<OverlayConfig | null>("get_overlay_config");
+
 export const onChanged = (cb: (snapshot: TrackerSnapshot) => void): Promise<UnlistenFn> =>
   listen<TrackerSnapshot>("tracker://changed", (e) => cb(e.payload));
 export const onTick = (cb: (now: Ms) => void): Promise<UnlistenFn> =>
   listen<{ now: Ms }>("tracker://tick", (e) => cb(e.payload.now));
+
+export const onOverlayHover = (cb: (hover: boolean) => void): Promise<UnlistenFn> =>
+  listen<boolean>("overlay://hover", (e) => cb(e.payload));
+export const onOverlayExpanded = (cb: (expanded: boolean) => void): Promise<UnlistenFn> =>
+  listen<boolean>("overlay://expanded", (e) => cb(e.payload));
+export const onOverlayConfig = (cb: (config: OverlayConfig) => void): Promise<UnlistenFn> =>
+  listen<OverlayConfig>("overlay://config", (e) => cb(e.payload));
+export const onOverlayFocusSearch = (cb: () => void): Promise<UnlistenFn> =>
+  listen<null>("overlay://focus-search", () => cb());

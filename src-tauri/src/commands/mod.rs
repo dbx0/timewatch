@@ -11,6 +11,7 @@ use crate::domain::calc::{DayCalc, Grouping, WeekReport};
 use crate::domain::{Entry, Ms, Project, Settings};
 use crate::export::{self, ExportFormat};
 use crate::tracker::{AbsenceResolution, Tracker, TrackerError, TrackerSnapshot};
+use crate::window::{self, HitRect, OverlayConfig, OverlayState};
 
 pub struct AppState {
     pub tracker: Mutex<Tracker>,
@@ -233,9 +234,37 @@ pub fn export_week(
     std::fs::write(&path, content).map_err(|e| format!("Não foi possível salvar o arquivo: {e}"))
 }
 
+/// Async so window creation does not deadlock on Windows (Tauri runs sync commands on the main thread).
 #[tauri::command]
-pub fn open_window(app: AppHandle, kind: String) -> Result<(), String> {
-    crate::window::create_or_focus(&app, &kind)
+pub async fn open_window(app: AppHandle, kind: String) -> Result<(), String> {
+    window::create_or_focus(&app, &kind)
+}
+
+/// Frontend reports its interactive rect (logical px relative to the overlay); `None` = nothing.
+#[tauri::command]
+pub fn overlay_set_hit_rect(overlay: State<OverlayState>, rect: Option<HitRect>) {
+    overlay.set_hit_rect(rect);
+}
+
+/// Frontend reports open/closed; closing gives keyboard focus back.
+#[tauri::command]
+pub fn overlay_set_expanded(app: AppHandle, overlay: State<OverlayState>, expanded: bool) {
+    overlay.set_expanded(expanded);
+    if !expanded {
+        crate::platform::unfocus_overlay(&app);
+    }
+}
+
+/// Makes the overlay take keyboard focus (search field click).
+#[tauri::command]
+pub async fn overlay_focus(app: AppHandle) {
+    window::focus_overlay(&app);
+}
+
+/// Current pill mode, for an overlay that loaded after the last `overlay://config`.
+#[tauri::command]
+pub fn get_overlay_config(overlay: State<OverlayState>) -> Option<OverlayConfig> {
+    overlay.config()
 }
 
 #[cfg(test)]

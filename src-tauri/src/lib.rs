@@ -35,7 +35,8 @@ fn start_ticker(app: tauri::AppHandle) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let app = tauri::Builder::default()
+    let builder = platform::register(tauri::Builder::default());
+    let app = builder
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             let _ = window::create_or_focus(app, "report");
         }))
@@ -48,8 +49,8 @@ pub fn run() {
             app.manage(AppState::new(tracker));
             start_ticker(app.handle().clone());
             absence::start_monitor(app.handle().clone());
-            // Task 9 replaces this with the overlay; Task 15 adds onboarding.
-            window::create_or_focus(app.handle(), "report")?;
+            // Task 15 adds onboarding.
+            window::create_overlay(app.handle())?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -72,12 +73,25 @@ pub fn run() {
             commands::set_settings,
             commands::export_week,
             commands::open_window,
+            commands::overlay_set_hit_rect,
+            commands::overlay_set_expanded,
+            commands::overlay_focus,
+            commands::get_overlay_config,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
 
     app.run(|app, event| {
-        if let RunEvent::ExitRequested { .. } | RunEvent::Exit = event {
+        let quitting = match &event {
+            // Last normal window closed (`code` None): keep running in the background.
+            RunEvent::ExitRequested { code: None, api, .. } => {
+                api.prevent_exit();
+                false
+            }
+            RunEvent::ExitRequested { .. } | RunEvent::Exit => true,
+            _ => false,
+        };
+        if quitting {
             if let Some(state) = app.try_state::<AppState>() {
                 state.quit_once(now_ms());
             }

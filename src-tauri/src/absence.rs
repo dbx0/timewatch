@@ -107,9 +107,15 @@ pub fn start_monitor(app: AppHandle) {
                 continue;
             };
             // Emit when the user must be asked, or stop-on-sleep left a notice.
+            let mut new_question = false;
             emit_if(&app, &state, |t| t.begin_absence(&Local, start, end, reason), |asked, snap| {
+                new_question = *asked && snap.pending_absence.is_some();
                 *asked || snap.notice.is_some()
             });
+            // The only producer of new pending absences: open the notch so the question is seen.
+            if new_question {
+                crate::window::expand_overlay(&app);
+            }
         }
     });
 }

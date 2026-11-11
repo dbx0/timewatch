@@ -15,6 +15,8 @@ const views: Record<string, () => React.JSX.Element> = {
 
 const view = new URLSearchParams(location.search).get("view") ?? "";
 const View = views[view] ?? Report;
+// The overlay window is transparent; only the pill/panel is painted.
+if (view === "notch") document.documentElement.classList.add("overlay");
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
