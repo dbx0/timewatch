@@ -50,6 +50,7 @@ export function TimePicker({ value, onChange, className = "", minuteStep = 5 }: 
   }, [minuteStep, m]);
 
   const openPicker = () => {
+    setTyped("");
     setHM(parse(value));
     setCol(0);
     setOpen(true);

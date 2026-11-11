@@ -197,16 +197,28 @@ export function NotchApp() {
     searchRef.current.focus();
   }, [focusReq, open, view]);
 
-  // Esc closes; losing key focus (a click elsewhere) closes a pinned panel.
+  /** Dismisses the note prompt without saving (the note can be added later in the day view). */
+  const skipNote = useCallback(() => {
+    useNotePrompt.getState().clear();
+    noteRef.current = null;
+    pinnedRef.current = false;
+  }, []);
+
+  // Esc closes; losing key focus (a click elsewhere) closes a pinned panel. With the note
+  // prompt open, both skip the note and close normally (never trap the panel over the menu bar).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape" && openRef.current) {
         e.preventDefault();
+        if (noteRef.current) skipNote();
         closePanel();
       }
     };
     const onBlur = () => {
-      if (openRef.current && pinnedRef.current) closePanel();
+      if (noteRef.current) {
+        skipNote();
+        closePanel();
+      } else if (openRef.current && pinnedRef.current) closePanel();
     };
     window.addEventListener("keydown", onKey);
     window.addEventListener("blur", onBlur);
@@ -214,7 +226,7 @@ export function NotchApp() {
       window.removeEventListener("keydown", onKey);
       window.removeEventListener("blur", onBlur);
     };
-  }, [closePanel]);
+  }, [closePanel, skipNote]);
 
   // A pending absence opens the panel; once answered (or undone elsewhere) it closes unless hovered.
   const hadPending = useRef(false);
@@ -230,13 +242,14 @@ export function NotchApp() {
     }
   }, [pending, openPanel, closePanel]);
 
-  // After a pause/stop from the notch the note field takes over: pinned, with keyboard focus
-  // (user action, so taking focus is fine). Done (saved or skipped): close unless hovered.
+  // After a pause/stop from the notch the note field takes over, pinned. NotePrompt takes the
+  // keyboard itself (focusWithKeyboard, a user action) so the focus-search echo is ignored.
+  // Done (saved or skipped): close unless hovered.
   useEffect(() => {
     if (!noteFor) return;
     clearTimers();
     pinnedRef.current = true;
-    requestKeyboard();
+    wantSearchFocus.current = false;
     setOpen(true);
     setView({ kind: "main" });
   }, [noteFor, setOpen]);

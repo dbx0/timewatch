@@ -55,9 +55,9 @@ export async function stop() {
   useNotePrompt.getState().ask(r.closed);
 }
 
-/** Saving a note keeps the stop's undo toast (no toast on success). */
-export async function saveNote(id: number, note: string | null) {
-  await run(() => api.setEntryNote(id, note));
+/** Saving a note keeps the stop's undo toast (no toast on success). False on failure (toasted). */
+export async function saveNote(id: number, note: string | null): Promise<boolean> {
+  return (await run(() => api.setEntryNote(id, note).then(() => true))) ?? false;
 }
 
 export async function resolve(r: AbsenceResolution, moveName?: string): Promise<boolean> {

@@ -6,16 +6,18 @@ import { Button } from "./Button";
 interface Props {
   initial?: string;
   /** Receives the trimmed text, or null when blank. */
-  onSave: (note: string | null) => void;
+  onSave: (note: string | null) => void | Promise<void>;
   onCancel: () => void;
   cancelLabel: string;
   autoFocus?: boolean;
   textareaRef?: Ref<HTMLTextAreaElement>;
   className?: string;
+  /** E.g. the notch makes its window key before the click focuses the field. */
+  onMouseDown?: (e: React.MouseEvent<HTMLTextAreaElement>) => void;
 }
 
 /** Note editor: Enter saves (Shift+Enter breaks the line), Esc cancels. Shared by notch and report. */
-export function NoteField({ initial = "", onSave, onCancel, cancelLabel, autoFocus, textareaRef, className = "" }: Props) {
+export function NoteField({ initial = "", onSave, onCancel, cancelLabel, autoFocus, textareaRef, className = "", onMouseDown }: Props) {
   const [text, setText] = useState(initial);
   const own = useRef<HTMLTextAreaElement | null>(null);
   const setRef = (el: HTMLTextAreaElement | null) => {
@@ -31,7 +33,7 @@ export function NoteField({ initial = "", onSave, onCancel, cancelLabel, autoFoc
     el.setSelectionRange(el.value.length, el.value.length);
   }, [autoFocus]);
 
-  const save = () => onSave(text.trim() ? text.trim() : null);
+  const save = () => void onSave(text.trim() ? text.trim() : null);
 
   return (
     <div className={className}>
@@ -44,6 +46,7 @@ export function NoteField({ initial = "", onSave, onCancel, cancelLabel, autoFoc
         placeholder={ptBR.ui.notePlaceholder}
         spellCheck={false}
         onChange={(e) => setText(e.target.value)}
+        onMouseDown={onMouseDown}
         onKeyDown={(e) => {
           if (e.nativeEvent.isComposing) return;
           if (e.key === "Enter" && !e.shiftKey) {

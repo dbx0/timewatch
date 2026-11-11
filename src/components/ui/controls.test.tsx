@@ -105,6 +105,18 @@ describe("TimePicker", () => {
     expect(on.className).not.toMatch(/bg-accent(\s|$)/);
   });
 
+  it("opening the picker discards half-typed digits", () => {
+    const onChange = vi.fn();
+    render(<TimePicker value="09:30" onChange={onChange} />);
+    const btn = screen.getByRole("button", { name: "09:30" });
+    fireEvent.keyDown(btn, { key: "1" });
+    expect(btn.textContent).toBe("1");
+    fireEvent.click(btn);
+    expect(btn.textContent).toBe("09:30");
+    fireEvent.keyDown(screen.getByTestId("timepicker-panel"), { key: "Enter" });
+    expect(onChange).toHaveBeenCalledWith("09:30");
+  });
+
   it("accepts typed digits on the focused trigger", () => {
     const onChange = vi.fn();
     render(<TimePicker value="09:30" onChange={onChange} />);
