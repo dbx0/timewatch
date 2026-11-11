@@ -1,3 +1,5 @@
+import { SettingsApp } from "../components/settings/SettingsApp";
+
 export function Settings() {
-  return <div data-view="settings">settings</div>;
+  return <SettingsApp />;
 }
