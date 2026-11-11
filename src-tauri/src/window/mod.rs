@@ -330,8 +330,9 @@ pub fn create_or_focus(app: &AppHandle, kind: &str) -> Result<(), String> {
     if center {
         b = b.center();
     }
-    b.build().map_err(|e| e.to_string())?;
+    let win = b.build().map_err(|e| e.to_string())?;
     sync_activation_policy(app, None);
+    let _ = win.set_focus();
     Ok(())
 }
 

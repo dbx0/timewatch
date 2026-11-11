@@ -76,12 +76,14 @@ pub fn run() {
             app.manage(AppState::new(tracker));
             start_ticker(app.handle().clone());
             absence::start_monitor(app.handle().clone());
+            // Accessory first: opening a normal window below switches back to Regular.
+            // Setting Accessory after the onboarding window hid it behind other apps.
+            #[cfg(target_os = "macos")]
+            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
             window::create_overlay(app.handle())?;
             if !app.state::<AppState>().lock().settings()?.onboarded {
                 window::create_or_focus(app.handle(), "onboarding")?;
             }
-            #[cfg(target_os = "macos")]
-            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
             tray::setup_tray(app.handle())?;
             tray::refresh_tray(app.handle());
             tray::apply_startup(app.handle());
