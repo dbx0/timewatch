@@ -46,7 +46,7 @@ describe("TitleBar", () => {
     expect(win.close).toHaveBeenCalledTimes(1);
   });
 
-  it("bar and title are drag regions, buttons are not; double click toggles maximize", async () => {
+  it("bar and title are drag regions, buttons are not; no extra double-click handler (Tauri handles it)", async () => {
     const { container } = render(<TitleBar title="Horas" />);
     await act(async () => {});
     const bar = container.firstElementChild as HTMLElement;
@@ -54,13 +54,6 @@ describe("TitleBar", () => {
     expect(screen.getByText("Horas").hasAttribute("data-tauri-drag-region")).toBe(true);
     screen.getAllByRole("button").forEach((b) => expect(b.hasAttribute("data-tauri-drag-region")).toBe(false));
     fireEvent.doubleClick(bar);
-    expect(win.toggleMaximize).toHaveBeenCalledTimes(1);
-  });
-
-  it("double click does nothing when not resizable", async () => {
-    const { container } = render(<TitleBar title="Bem-vindo" resizable={false} />);
-    await act(async () => {});
-    fireEvent.doubleClick(container.firstElementChild as HTMLElement);
     expect(win.toggleMaximize).not.toHaveBeenCalled();
   });
 

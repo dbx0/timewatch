@@ -11,7 +11,6 @@ function CtrlButton({ label, onClick, danger, children }: { label: string; onCli
       aria-label={label}
       title={label}
       onClick={onClick}
-      onDoubleClick={(e) => e.stopPropagation()}
       className={`group grid h-full w-[46px] cursor-pointer place-items-center bg-transparent text-mute outline-none transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent2 ${
         danger ? "hover:bg-accent hover:text-white" : "hover:bg-raise2 hover:text-text"
       }`}
@@ -40,11 +39,11 @@ export function TitleBar({ title, resizable = true }: { title: string; resizable
     };
   }, [resizable]);
 
+  // Double-click on the bar toggles maximize via Tauri's built-in drag-region handling.
   const win = () => getCurrentWindow();
   return (
     <div
       data-tauri-drag-region
-      onDoubleClick={() => resizable && void win().toggleMaximize()}
       className="flex h-10 flex-none select-none items-center justify-between border-b border-line bg-win pl-3.5"
     >
       <div data-tauri-drag-region className="flex min-w-0 items-center gap-2 text-[13px] font-medium text-text">
