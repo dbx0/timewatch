@@ -92,7 +92,11 @@ pub fn show_overlay(window: &WebviewWindow) {
     {
         macos::show_overlay(window)
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
+    {
+        windows::show_overlay(window)
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         let _ = window.show();
     }
@@ -110,10 +114,19 @@ pub fn cursor_scale(primary_scale: f64, monitor_scale: f64) -> f64 {
 
 /// Moves and sizes the overlay. macOS uses global points; elsewhere physical pixels.
 pub fn position_overlay(window: &WebviewWindow, l: &OverlayLayout) {
-    let _ = window.set_size(tauri::LogicalSize::new(l.w, l.h));
-    if cfg!(target_os = "macos") {
+    let size = tauri::LogicalSize::new(l.w, l.h);
+    #[cfg(target_os = "macos")]
+    {
+        let _ = window.set_size(size);
         let _ = window.set_position(tauri::LogicalPosition::new(l.x, l.y));
-    } else {
+    }
+    #[cfg(target_os = "windows")]
+    {
+        windows::set_frame(window, size, tauri::PhysicalPosition::new(l.phys_x, l.phys_y));
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        let _ = window.set_size(size);
         let _ = window.set_position(tauri::PhysicalPosition::new(l.phys_x, l.phys_y));
     }
 }

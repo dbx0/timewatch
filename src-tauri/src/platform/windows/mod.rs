@@ -23,11 +23,14 @@ fn hwnd(window: &WebviewWindow) -> Option<HWND> {
     window.hwnd().ok().map(|h| HWND(h.0 as _))
 }
 
-/// tao rebuilds GWL_EXSTYLE from its own flags on every flag change (ignore-cursor, focusable)
-/// and has no flag for WS_EX_TOOLWINDOW, so it is re-added after each such change. The task is
-/// queued on the event loop behind the Tauri setter that triggered the rebuild (FIFO), or runs
-/// inline right after it when already on the main thread.
-fn reapply_toolwindow(window: &WebviewWindow, then: impl FnOnce(HWND) + Send + 'static) {
+/// tao rebuilds GWL_EXSTYLE from its own flags on every flag change (visibility, ignore-cursor,
+/// focusable, position/size via MAXIMIZED, always-on-top) and has no flag for WS_EX_TOOLWINDOW.
+/// Every tao-backed setter used on the overlay therefore goes through this helper: it runs `f`,
+/// then queues a main-thread task that re-adds WS_EX_TOOLWINDOW and runs `then`. Event-loop
+/// messages are FIFO (and both run inline when already on the main thread), so the task runs
+/// after tao's `SetWindowLongW`.
+fn with_toolwindow(window: &WebviewWindow, f: impl FnOnce(&WebviewWindow), then: impl FnOnce(HWND) + Send + 'static) {
+    f(window);
     let Some(h) = hwnd(window) else { return };
     let raw = h.0 as usize;
     let _ = window.run_on_main_thread(move || {
@@ -47,21 +50,36 @@ fn reapply_toolwindow(window: &WebviewWindow, then: impl FnOnce(HWND) + Send + '
 /// Non-activation comes from `focusable(false)` (tao's WS_EX_NOACTIVATE) and topmost from
 /// `always_on_top(true)`; only WS_EX_TOOLWINDOW (hidden from Alt+Tab) is ours.
 pub fn make_overlay(window: &WebviewWindow) -> Result<(), String> {
-    hwnd(window).ok_or("overlay sem HWND")?;
-    reapply_toolwindow(window, |_| {});
+    if hwnd(window).is_none() {
+        return Err("overlay sem HWND".into());
+    }
+    with_toolwindow(window, |_| {}, |_| {});
     Ok(())
 }
 
+pub fn show_overlay(window: &WebviewWindow) {
+    with_toolwindow(window, |w| drop(w.show()), |_| {});
+}
+
+pub fn set_frame(window: &WebviewWindow, size: tauri::LogicalSize<f64>, pos: tauri::PhysicalPosition<i32>) {
+    with_toolwindow(
+        window,
+        |w| {
+            let _ = w.set_size(size);
+            let _ = w.set_position(pos);
+        },
+        |_| {},
+    );
+}
+
 pub fn set_ignore_cursor_events(window: &WebviewWindow, ignore: bool) {
-    let _ = window.set_ignore_cursor_events(ignore);
-    reapply_toolwindow(window, |_| {});
+    with_toolwindow(window, |w| drop(w.set_ignore_cursor_events(ignore)), |_| {});
 }
 
 /// Focusability goes through Tauri so tao's own flags (and later rebuilds) agree.
 pub fn focus_overlay(app: &AppHandle) {
     let Some(win) = app.get_webview_window(OVERLAY_LABEL) else { return };
-    let _ = win.set_focusable(true);
-    reapply_toolwindow(&win, |h| {
+    with_toolwindow(&win, |w| drop(w.set_focusable(true)), |h| {
         // SAFETY: valid HWND of our own window.
         let _ = unsafe { SetForegroundWindow(h) };
     });
@@ -69,6 +87,5 @@ pub fn focus_overlay(app: &AppHandle) {
 
 pub fn unfocus_overlay(app: &AppHandle) {
     let Some(win) = app.get_webview_window(OVERLAY_LABEL) else { return };
-    let _ = win.set_focusable(false);
-    reapply_toolwindow(&win, |_| {});
+    with_toolwindow(&win, |w| drop(w.set_focusable(false)), |_| {});
 }
