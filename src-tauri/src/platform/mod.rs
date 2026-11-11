@@ -44,6 +44,23 @@ pub fn idle_seconds() -> f64 {
     }
 }
 
+/// Milliseconds on a monotonic clock that does NOT advance while the system sleeps, so a wall-clock
+/// jump beyond it reveals a sleep. macOS: `Instant` is `CLOCK_UPTIME_RAW` (excludes sleep).
+/// Windows: `Instant` (QPC) keeps counting during sleep, so use `QueryUnbiasedInterruptTime`.
+pub fn monotonic_ms() -> u64 {
+    #[cfg(target_os = "windows")]
+    {
+        windows::monotonic_ms()
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        use std::sync::OnceLock;
+        use std::time::Instant;
+        static ORIGIN: OnceLock<Instant> = OnceLock::new();
+        ORIGIN.get_or_init(Instant::now).elapsed().as_millis() as u64
+    }
+}
+
 /// Notch size of `monitor`, if it has one (macOS only).
 pub fn notch_info(app: &AppHandle, monitor: &Monitor) -> Option<NotchInfo> {
     #[cfg(target_os = "macos")]
@@ -160,5 +177,18 @@ pub fn unfocus_overlay(app: &AppHandle) {
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         let _ = app;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn monotonic_ms_never_goes_backwards_and_advances() {
+        let a = monotonic_ms();
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        let b = monotonic_ms();
+        assert!(b >= a + 15, "{a} -> {b}");
     }
 }

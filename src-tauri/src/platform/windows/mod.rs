@@ -1,6 +1,7 @@
 use tauri::{AppHandle, Manager, WebviewWindow};
 use windows::Win32::Foundation::HWND;
 use windows::Win32::System::SystemInformation::GetTickCount;
+use windows::Win32::System::WindowsProgramming::QueryUnbiasedInterruptTime;
 use windows::Win32::UI::Input::KeyboardAndMouse::{GetLastInputInfo, LASTINPUTINFO};
 use windows::Win32::UI::WindowsAndMessaging::{
     GetWindowLongPtrW, SetForegroundWindow, SetWindowLongPtrW, GWL_EXSTYLE, WS_EX_TOOLWINDOW,
@@ -16,6 +17,16 @@ pub fn idle_seconds() -> f64 {
     }
     let now = unsafe { GetTickCount() };
     f64::from(now.wrapping_sub(info.dwTime)) / 1000.0
+}
+
+/// Interrupt time excluding sleep/hibernate, in ms (the API counts 100 ns units).
+pub fn monotonic_ms() -> u64 {
+    let mut t: u64 = 0;
+    // SAFETY: `t` is a valid out pointer for the duration of the call.
+    if !unsafe { QueryUnbiasedInterruptTime(&mut t) }.as_bool() {
+        return 0;
+    }
+    t / 10_000
 }
 
 fn hwnd(window: &WebviewWindow) -> Option<HWND> {
