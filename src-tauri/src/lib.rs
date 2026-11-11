@@ -1,5 +1,6 @@
 pub mod domain;
 pub mod store;
+pub mod tracker;
 
 use tauri::Manager;
 

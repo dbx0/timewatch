@@ -1,0 +1,699 @@
+//! Tracker: the clock state machine (spec 6.2), absence handling (6.3), one-level undo
+//! and the heartbeat. Every mutation runs inside one SQLite transaction, so a failed
+//! operation leaves data unchanged.
+//!
+//! State model: the open entry (if any) means Running; otherwise `meta.session` plus
+//! `meta.paused == true` means Paused; anything else is Idle. `Session.accum_ms` holds the
+//! time of the session's already-closed blocks.
+
+mod undo;
+#[cfg(test)]
+mod tests;
+
+use chrono::{Duration, NaiveDate, TimeZone};
+use serde::{Deserialize, Serialize};
+
+use crate::domain::calc::{self, DayCalc, Grouping, WeekReport};
+use crate::domain::time::{day_bounds, local_day};
+use crate::domain::{Entry, Lunch, Ms, Project, Settings};
+use crate::store::{repo, Db, StoreError};
+pub use undo::{UndoLog, UndoOp};
+
+pub(crate) const META_SETTINGS: &str = "settings";
+pub(crate) const META_SESSION: &str = "session";
+pub(crate) const META_PAUSED: &str = "paused";
+pub(crate) const META_HEARTBEAT: &str = "heartbeat";
+
+/// Gap after which an open entry found at startup is considered abandoned.
+const HEARTBEAT_STALE_MS: i64 = 120_000;
+const MAX_RECENTS: usize = 4;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ClockStatus {
+    Idle,
+    Running,
+    Paused,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Session {
+    pub project_id: i64,
+    pub accum_ms: i64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum AbsenceReason {
+    Idle,
+    Sleep,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Absence {
+    pub start: Ms,
+    pub end: Ms,
+    pub reason: AbsenceReason,
+    pub project_id: i64,
+}
+
+/// Serialized as `{"kind": "discount"|"lunch"|"keep"|"moveTo", "projectId"?: n}`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(from = "ResolutionRepr", into = "ResolutionRepr")]
+pub enum AbsenceResolution {
+    Discount,
+    Lunch,
+    Keep,
+    MoveTo(i64),
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+enum ResolutionRepr {
+    Discount,
+    Lunch,
+    Keep,
+    #[serde(rename_all = "camelCase")]
+    MoveTo { project_id: i64 },
+}
+
+impl From<ResolutionRepr> for AbsenceResolution {
+    fn from(r: ResolutionRepr) -> Self {
+        match r {
+            ResolutionRepr::Discount => Self::Discount,
+            ResolutionRepr::Lunch => Self::Lunch,
+            ResolutionRepr::Keep => Self::Keep,
+            ResolutionRepr::MoveTo { project_id } => Self::MoveTo(project_id),
+        }
+    }
+}
+
+impl From<AbsenceResolution> for ResolutionRepr {
+    fn from(r: AbsenceResolution) -> Self {
+        match r {
+            AbsenceResolution::Discount => Self::Discount,
+            AbsenceResolution::Lunch => Self::Lunch,
+            AbsenceResolution::Keep => Self::Keep,
+            AbsenceResolution::MoveTo(project_id) => Self::MoveTo { project_id },
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecentProject {
+    pub project: Project,
+    pub today_ms: i64,
+    pub shortcut: Option<u8>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TrackerSnapshot {
+    pub status: ClockStatus,
+    pub session_project: Option<Project>,
+    pub session_ms: i64,
+    pub running_since: Option<Ms>,
+    pub today_ms: i64,
+    pub today_jornada_ms: i64,
+    pub recents: Vec<RecentProject>,
+    pub projects: Vec<Project>,
+    pub pending_absence: Option<Absence>,
+    pub can_undo: bool,
+    pub notice: Option<String>,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum TrackerError {
+    #[error("Erro ao acessar os dados: {0}")]
+    Store(#[from] StoreError),
+    #[error("Registro não encontrado")]
+    NotFound,
+    #[error("O início precisa ser antes do fim")]
+    InvalidRange,
+    #[error("Esse horário sobrepõe outro registro")]
+    Overlap,
+    #[error("Nenhuma sessão ativa")]
+    NoSession,
+}
+
+impl From<rusqlite::Error> for TrackerError {
+    fn from(e: rusqlite::Error) -> Self {
+        Self::Store(e.into())
+    }
+}
+
+/// Errors reach the frontend as their pt-BR message.
+impl Serialize for TrackerError {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
+        s.serialize_str(&self.to_string())
+    }
+}
+
+type Result<T> = std::result::Result<T, TrackerError>;
+
+pub struct Tracker {
+    db: Db,
+    pending: Option<Absence>,
+    undo: Option<UndoLog>,
+    notice: Option<String>,
+}
+
+// ---- free helpers over the db (used inside transactions) ----
+
+fn hhmm<Tz: TimeZone>(tz: &Tz, ms: Ms) -> String {
+    tz.timestamp_millis_opt(ms)
+        .single()
+        .map(|d| d.naive_local().format("%H:%M").to_string())
+        .unwrap_or_default()
+}
+
+fn load_session(db: &Db) -> Result<(Option<Session>, bool)> {
+    let s = repo::get_meta::<Session>(db, META_SESSION)?;
+    let paused = repo::get_meta::<bool>(db, META_PAUSED)?.unwrap_or(false);
+    Ok((s, paused))
+}
+
+fn save_session(db: &Db, s: Option<&Session>, paused: bool) -> Result<()> {
+    match s {
+        Some(s) => repo::set_meta(db, META_SESSION, s)?,
+        None => repo::del_meta(db, META_SESSION)?,
+    }
+    if paused {
+        repo::set_meta(db, META_PAUSED, &true)?;
+    } else {
+        repo::del_meta(db, META_PAUSED)?;
+    }
+    Ok(())
+}
+
+/// Records the current session for undo and returns it.
+fn record_session(db: &Db, log: &mut UndoLog) -> Result<(Option<Session>, bool)> {
+    let (s, paused) = load_session(db)?;
+    log.push(UndoOp::RestoreSession(s.clone(), paused));
+    Ok((s, paused))
+}
+
+/// The running session, tolerating a missing/mismatched `meta.session`.
+fn running_session(s: Option<Session>, open: &Entry) -> Session {
+    match s {
+        Some(s) if s.project_id == open.project_id => s,
+        _ => Session { project_id: open.project_id, accum_ms: 0 },
+    }
+}
+
+fn project(db: &Db, id: i64) -> Result<Project> {
+    repo::list_projects(db)?.into_iter().find(|p| p.id == id).ok_or(TrackerError::NotFound)
+}
+
+/// Closes `e` at `at` (never before its start). Returns the closed block length.
+fn close_entry(db: &Db, log: &mut UndoLog, e: &Entry, at: Ms) -> Result<i64> {
+    log.push(UndoOp::RestoreEntry(e.clone()));
+    let end = at.max(e.start);
+    repo::update_entry(db, &Entry { end: Some(end), ..e.clone() })?;
+    Ok(end - e.start)
+}
+
+fn insert_entry(db: &Db, log: &mut UndoLog, pid: i64, start: Ms, end: Option<Ms>) -> Result<Entry> {
+    let e = repo::insert_entry(db, pid, start, end)?;
+    log.push(UndoOp::DeleteEntry(e.id));
+    if end.is_none() {
+        // A fresh heartbeat so a crash before the first tick closes near the clock in.
+        repo::set_meta(db, META_HEARTBEAT, &start)?;
+    }
+    Ok(e)
+}
+
+/// Rejects inverted ranges and overlaps (open entries end at `now`; touching is fine).
+fn validate_range(db: &Db, exclude: Option<i64>, start: Ms, end: Ms, now: Ms) -> Result<()> {
+    if start >= end {
+        return Err(TrackerError::InvalidRange);
+    }
+    let clash = repo::entries_between(db, start, end)?.into_iter().any(|o| {
+        Some(o.id) != exclude && start < o.end.unwrap_or(now) && o.start < end
+    });
+    if clash {
+        return Err(TrackerError::Overlap);
+    }
+    Ok(())
+}
+
+impl Tracker {
+    pub fn new(db: Db) -> Tracker {
+        Tracker { db, pending: None, undo: None, notice: None }
+    }
+
+    /// Runs `f` in one transaction. On success the recorded log becomes the undo
+    /// (or the undo is cleared when `undoable` is false) and the notice is reset.
+    /// On error the transaction rolls back and in-memory state is untouched.
+    fn run<T>(&mut self, undoable: bool, f: impl FnOnce(&Db, &mut UndoLog) -> Result<T>) -> Result<T> {
+        let mut log = UndoLog::default();
+        let tx = self.db.conn().unchecked_transaction()?;
+        let out = f(&self.db, &mut log)?;
+        tx.commit()?;
+        self.undo = undoable.then_some(log);
+        self.notice = None;
+        Ok(out)
+    }
+
+    pub fn settings(&self) -> Result<Settings> {
+        Ok(repo::get_meta(&self.db, META_SETTINGS)?.unwrap_or_default())
+    }
+
+    pub fn set_settings(&mut self, s: Settings) -> Result<()> {
+        Ok(repo::set_meta(&self.db, META_SETTINGS, &s)?)
+    }
+
+    pub fn clear_notice(&mut self) {
+        self.notice = None;
+    }
+
+    // ---- clock ----
+
+    /// Closes the open entry (if any) and starts a new session on `pid`.
+    /// Switching to the project that is already running is a no-op.
+    pub fn switch_to(&mut self, pid: i64, now: Ms) -> Result<()> {
+        let open = repo::open_entry(&self.db)?;
+        if open.as_ref().is_some_and(|o| o.project_id == pid) {
+            return Ok(());
+        }
+        let pending = self.pending.clone();
+        self.run(true, |db, log| {
+            project(db, pid)?;
+            log.push(UndoOp::RestorePending(pending));
+            record_session(db, log)?;
+            if let Some(o) = &open {
+                close_entry(db, log, o, now)?;
+            }
+            insert_entry(db, log, pid, now, None)?;
+            save_session(db, Some(&Session { project_id: pid, accum_ms: 0 }), false)
+        })?;
+        self.pending = None;
+        Ok(())
+    }
+
+    pub fn pause(&mut self, now: Ms) -> Result<()> {
+        let Some(open) = repo::open_entry(&self.db)? else {
+            return match load_session(&self.db)? {
+                (Some(_), true) => Ok(()),
+                _ => Err(TrackerError::NoSession),
+            };
+        };
+        let pending = self.pending.clone();
+        self.run(true, |db, log| {
+            log.push(UndoOp::RestorePending(pending));
+            let (s, _) = record_session(db, log)?;
+            let mut s = running_session(s, &open);
+            s.accum_ms += close_entry(db, log, &open, now)?;
+            save_session(db, Some(&s), true)
+        })?;
+        self.pending = None;
+        Ok(())
+    }
+
+    pub fn resume(&mut self, now: Ms) -> Result<()> {
+        if repo::open_entry(&self.db)?.is_some() {
+            return Ok(());
+        }
+        let (Some(s), true) = load_session(&self.db)? else {
+            return Err(TrackerError::NoSession);
+        };
+        let pending = self.pending.clone();
+        self.run(true, |db, log| {
+            log.push(UndoOp::RestorePending(pending));
+            record_session(db, log)?;
+            insert_entry(db, log, s.project_id, now, None)?;
+            save_session(db, Some(&s), false)
+        })
+    }
+
+    pub fn stop(&mut self, now: Ms) -> Result<()> {
+        let open = repo::open_entry(&self.db)?;
+        if open.is_none() && load_session(&self.db)?.0.is_none() {
+            return Ok(());
+        }
+        let pending = self.pending.clone();
+        self.run(true, |db, log| {
+            log.push(UndoOp::RestorePending(pending));
+            record_session(db, log)?;
+            if let Some(o) = &open {
+                close_entry(db, log, o, now)?;
+            }
+            save_session(db, None, false)
+        })?;
+        self.pending = None;
+        Ok(())
+    }
+
+    // ---- absence ----
+
+    /// Records an absence of the running entry. Returns whether the user must be asked.
+    /// Sleep with `stop_on_sleep` closes the entry at `start` instead (not undoable).
+    pub fn begin_absence<Tz: TimeZone>(
+        &mut self,
+        tz: &Tz,
+        start: Ms,
+        end: Ms,
+        reason: AbsenceReason,
+    ) -> Result<bool> {
+        let Some(open) = repo::open_entry(&self.db)? else {
+            return Ok(false);
+        };
+        let start = start.max(open.start);
+        if end <= start {
+            return Ok(false);
+        }
+        if reason == AbsenceReason::Sleep && self.settings()?.stop_on_sleep {
+            self.run(false, |db, log| {
+                close_entry(db, log, &open, start)?;
+                save_session(db, None, false)
+            })?;
+            self.pending = None;
+            self.notice = Some(format!(
+                "O relógio foi parado às {}, quando o computador entrou em repouso",
+                hhmm(tz, start)
+            ));
+            return Ok(false);
+        }
+        // A newer absence replaces an unanswered one; the older interval stays counted.
+        self.pending = Some(Absence { start, end, reason, project_id: open.project_id });
+        Ok(true)
+    }
+
+    /// Applies the user's answer to the pending absence (spec 6.3). Undoable; undo also
+    /// brings the question back.
+    pub fn resolve_absence<Tz: TimeZone>(
+        &mut self,
+        tz: &Tz,
+        res: AbsenceResolution,
+        now: Ms,
+    ) -> Result<()> {
+        let a = self.pending.clone().ok_or(TrackerError::NotFound)?;
+        let open = match repo::open_entry(&self.db)? {
+            Some(o) if o.project_id == a.project_id => o,
+            _ => {
+                self.pending = None;
+                return Err(TrackerError::NoSession);
+            }
+        };
+        let res = match res {
+            AbsenceResolution::MoveTo(pid) if pid == a.project_id => AbsenceResolution::Keep,
+            r => r,
+        };
+        self.run(true, |db, log| {
+            log.push(UndoOp::RestorePending(Some(a.clone())));
+            if res == AbsenceResolution::Keep {
+                return Ok(());
+            }
+            if let AbsenceResolution::MoveTo(pid) = res {
+                project(db, pid)?;
+            }
+            let back = a.end.min(now).max(a.start);
+            let (s, _) = record_session(db, log)?;
+            let mut s = running_session(s, &open);
+            s.accum_ms += close_entry(db, log, &open, a.start)?;
+            if let AbsenceResolution::MoveTo(pid) = res {
+                if back > a.start {
+                    insert_entry(db, log, pid, a.start, Some(back))?;
+                }
+            }
+            insert_entry(db, log, a.project_id, back, None)?;
+            save_session(db, Some(&s), false)?;
+            if res == AbsenceResolution::Lunch {
+                let day = local_day(tz, a.start);
+                match repo::lunches_between(db, day, day)?.into_iter().next() {
+                    Some(old) => log.push(UndoOp::RestoreLunch(old)),
+                    None => log.push(UndoOp::DeleteLunch(day)),
+                }
+                repo::upsert_lunch(db, &Lunch { day, start: a.start, end: back })?;
+            }
+            Ok(())
+        })?;
+        self.pending = None;
+        Ok(())
+    }
+
+    // ---- undo, heartbeat, startup, quit ----
+
+    /// Reverts the last undoable operation. Returns false when there is nothing to undo.
+    pub fn undo(&mut self) -> Result<bool> {
+        let Some(log) = self.undo.clone() else {
+            return Ok(false);
+        };
+        let mut pending = self.pending.clone();
+        let tx = self.db.conn().unchecked_transaction()?;
+        log.apply(&self.db, &mut pending)?;
+        tx.commit()?;
+        self.pending = pending;
+        self.undo = None;
+        self.notice = None;
+        Ok(true)
+    }
+
+    /// Proof of life while running (spec 6.2); call every minute and before sleep.
+    pub fn heartbeat(&self, now: Ms) -> Result<()> {
+        if repo::open_entry(&self.db)?.is_some() {
+            repo::set_meta(&self.db, META_HEARTBEAT, &now)?;
+        }
+        Ok(())
+    }
+
+    /// If an entry was left open and the last heartbeat is older than 2 min, closes it at
+    /// the heartbeat (never before its start), ends the session and sets an undoable notice.
+    /// Returns the close time.
+    pub fn reconcile_on_startup<Tz: TimeZone>(&mut self, tz: &Tz, now: Ms) -> Result<Option<Ms>> {
+        let Some(open) = repo::open_entry(&self.db)? else {
+            // A "running" session without an open entry is stale: drop it.
+            if let (Some(_), false) = load_session(&self.db)? {
+                save_session(&self.db, None, false)?;
+            }
+            return Ok(None);
+        };
+        let hb = repo::get_meta::<Ms>(&self.db, META_HEARTBEAT)?;
+        let last = hb.unwrap_or(open.start).max(open.start);
+        if now - last <= HEARTBEAT_STALE_MS {
+            repo::set_meta(&self.db, META_HEARTBEAT, &now)?;
+            return Ok(None);
+        }
+        self.run(true, |db, log| {
+            record_session(db, log)?;
+            close_entry(db, log, &open, last)?;
+            save_session(db, None, false)
+        })?;
+        self.pending = None;
+        self.notice = Some(format!("O relógio foi parado às {}, quando o app fechou", hhmm(tz, last)));
+        Ok(Some(last))
+    }
+
+    /// Stops the clock on app exit: at the pending absence start if there is one, else at
+    /// `now`. Ends the session. Not undoable.
+    pub fn quit(&mut self, now: Ms) -> Result<()> {
+        let open = repo::open_entry(&self.db)?;
+        let at = self.pending.as_ref().map_or(now, |a| a.start.min(now));
+        self.run(false, |db, log| {
+            if let Some(o) = &open {
+                close_entry(db, log, o, at)?;
+            }
+            save_session(db, None, false)
+        })?;
+        self.pending = None;
+        Ok(())
+    }
+
+    // ---- projects, entries, lunches ----
+
+    pub fn create_project(&mut self, name: &str, client: &str, color: &str) -> Result<Project> {
+        self.run(false, |db, _| Ok(repo::insert_project(db, name, client, color)?))
+    }
+
+    pub fn update_project(&mut self, p: Project) -> Result<()> {
+        self.run(false, |db, _| {
+            project(db, p.id)?;
+            Ok(repo::update_project(db, &p)?)
+        })
+    }
+
+    pub fn add_entry(&mut self, pid: i64, start: Ms, end: Ms, now: Ms) -> Result<Entry> {
+        self.run(true, |db, log| {
+            project(db, pid)?;
+            validate_range(db, None, start, end, now)?;
+            insert_entry(db, log, pid, start, Some(end))
+        })
+    }
+
+    /// Edits an entry. Setting `end` on the running entry stops the clock; changing its
+    /// project moves the session to that project.
+    pub fn update_entry(
+        &mut self,
+        id: i64,
+        start: Option<Ms>,
+        end: Option<Ms>,
+        project_id: Option<i64>,
+        now: Ms,
+    ) -> Result<Entry> {
+        let pending = self.pending.clone();
+        let (entry, was_open) = self.run(true, |db, log| {
+            let old = repo::get_entry(db, id)?.ok_or(TrackerError::NotFound)?;
+            let new = Entry {
+                id,
+                project_id: project_id.unwrap_or(old.project_id),
+                start: start.unwrap_or(old.start),
+                end: end.or(old.end),
+            };
+            if project_id.is_some() {
+                project(db, new.project_id)?;
+            }
+            validate_range(db, Some(id), new.start, new.end.unwrap_or(now), now)?;
+            log.push(UndoOp::RestoreEntry(old.clone()));
+            repo::update_entry(db, &new)?;
+            let was_open = old.end.is_none();
+            if was_open {
+                log.push(UndoOp::RestorePending(pending));
+                let (s, _) = record_session(db, log)?;
+                if new.end.is_some() {
+                    save_session(db, None, false)?;
+                } else if new.project_id != old.project_id {
+                    let s = Session { project_id: new.project_id, ..running_session(s, &old) };
+                    save_session(db, Some(&s), false)?;
+                }
+            }
+            Ok((new, was_open))
+        })?;
+        if was_open {
+            self.pending = None;
+        }
+        Ok(entry)
+    }
+
+    /// Deletes an entry; deleting the running one stops the clock.
+    pub fn delete_entry(&mut self, id: i64) -> Result<()> {
+        let pending = self.pending.clone();
+        let was_open = self.run(true, |db, log| {
+            let old = repo::get_entry(db, id)?.ok_or(TrackerError::NotFound)?;
+            log.push(UndoOp::RestoreEntry(old.clone()));
+            repo::delete_entry(db, id)?;
+            let was_open = old.end.is_none();
+            if was_open {
+                log.push(UndoOp::RestorePending(pending));
+                record_session(db, log)?;
+                save_session(db, None, false)?;
+            }
+            Ok(was_open)
+        })?;
+        if was_open {
+            self.pending = None;
+        }
+        Ok(())
+    }
+
+    pub fn unmark_lunch(&mut self, day: NaiveDate) -> Result<()> {
+        self.run(true, |db, log| {
+            let old = repo::lunches_between(db, day, day)?
+                .into_iter()
+                .next()
+                .ok_or(TrackerError::NotFound)?;
+            log.push(UndoOp::RestoreLunch(old));
+            Ok(repo::delete_lunch(db, day)?)
+        })
+    }
+
+    // ---- reads ----
+
+    pub fn snapshot<Tz: TimeZone>(&self, tz: &Tz, now: Ms) -> Result<TrackerSnapshot> {
+        let db = &self.db;
+        let open = repo::open_entry(db)?;
+        let (session, paused) = load_session(db)?;
+        let projects = repo::list_projects(db)?;
+        let find = |id: i64| projects.iter().find(|p| p.id == id).cloned();
+
+        let (status, session) = match (&open, session) {
+            (Some(o), s) => (ClockStatus::Running, Some(running_session(s, o))),
+            (None, Some(s)) if paused => (ClockStatus::Paused, Some(s)),
+            _ => (ClockStatus::Idle, None),
+        };
+        let session_ms = session.as_ref().map_or(0, |s| {
+            s.accum_ms + open.as_ref().map_or(0, |o| (now - o.start).max(0))
+        });
+
+        let today = local_day(tz, now);
+        let bounds = day_bounds(tz, today);
+        let segs = calc::day_segments(&repo::entries_between(db, bounds.0, bounds.1)?, bounds, now);
+        let project_today =
+            |pid: i64| segs.iter().filter(|g| g.project_id == pid).map(|g| g.end - g.start).sum();
+
+        let mut picked: Vec<Project> = Vec::new();
+        for pid in repo::recent_project_ids(db, now)? {
+            if picked.len() == MAX_RECENTS {
+                break;
+            }
+            if let Some(p) = find(pid).filter(|p| !p.archived) {
+                picked.push(p);
+            }
+        }
+        let mut rest: Vec<&Project> = projects
+            .iter()
+            .filter(|p| !p.archived && !picked.iter().any(|q| q.id == p.id))
+            .collect();
+        rest.sort_by_key(|p| (p.name.to_lowercase(), p.id));
+        let room = MAX_RECENTS.saturating_sub(picked.len());
+        picked.extend(rest.into_iter().take(room).cloned());
+        let recents = picked
+            .into_iter()
+            .enumerate()
+            .map(|(i, p)| RecentProject {
+                today_ms: project_today(p.id),
+                project: p,
+                shortcut: Some(i as u8 + 1),
+            })
+            .collect();
+
+        Ok(TrackerSnapshot {
+            status,
+            session_project: session.as_ref().and_then(|s| find(s.project_id)),
+            session_ms,
+            running_since: open.as_ref().map(|o| o.start),
+            today_ms: segs.iter().map(|g| g.end - g.start).sum(),
+            today_jornada_ms: self.settings()?.jornada_ms(today),
+            recents,
+            projects,
+            pending_absence: self.pending.clone(),
+            can_undo: self.undo.is_some(),
+            notice: self.notice.clone(),
+        })
+    }
+
+    pub fn week_report<Tz: TimeZone>(
+        &self,
+        tz: &Tz,
+        week_start: NaiveDate,
+        now: Ms,
+        grouping: Grouping,
+    ) -> Result<WeekReport> {
+        let last = week_start + Duration::days(6);
+        let (from, _) = day_bounds(tz, week_start);
+        let (_, to) = day_bounds(tz, last);
+        let entries = repo::entries_between(&self.db, from, to)?;
+        let lunches = repo::lunches_between(&self.db, week_start, last)?;
+        let projects = repo::list_projects(&self.db)?;
+        Ok(calc::week_report(
+            tz,
+            week_start,
+            local_day(tz, now),
+            &projects,
+            &entries,
+            &lunches,
+            &self.settings()?,
+            now,
+            grouping,
+        ))
+    }
+
+    pub fn day_calc<Tz: TimeZone>(&self, tz: &Tz, day: NaiveDate, now: Ms) -> Result<DayCalc> {
+        let (from, to) = day_bounds(tz, day);
+        let entries = repo::entries_between(&self.db, from, to)?;
+        let lunches = repo::lunches_between(&self.db, day, day)?;
+        Ok(calc::day_calc(tz, day, local_day(tz, now), &entries, &lunches, &self.settings()?, now))
+    }
+}

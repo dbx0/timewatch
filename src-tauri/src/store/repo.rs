@@ -75,6 +75,28 @@ pub fn update_entry(db: &Db, e: &Entry) -> Result<()> {
     Ok(())
 }
 
+/// Inserts the row with its own id, or overwrites the row with that id (used by undo).
+/// Never deletes other rows: a conflicting open entry is an error.
+pub fn put_entry(db: &Db, e: &Entry) -> Result<()> {
+    db.conn().execute(
+        "INSERT INTO entries(id, project_id, start, \"end\") VALUES (?1, ?2, ?3, ?4)
+         ON CONFLICT(id) DO UPDATE SET project_id = excluded.project_id,
+             start = excluded.start, \"end\" = excluded.\"end\"",
+        params![e.id, e.project_id, e.start, e.end],
+    )?;
+    Ok(())
+}
+
+/// Project ids ordered by their latest activity (`COALESCE(end, now)`), most recent first.
+pub fn recent_project_ids(db: &Db, now: Ms) -> Result<Vec<i64>> {
+    let mut st = db.conn().prepare(
+        "SELECT project_id, MAX(COALESCE(\"end\", ?1)) AS last FROM entries
+         GROUP BY project_id ORDER BY last DESC, project_id DESC",
+    )?;
+    let rows = st.query_map(params![now], |r| r.get(0))?.collect::<rusqlite::Result<Vec<i64>>>()?;
+    Ok(rows)
+}
+
 pub fn delete_entry(db: &Db, id: i64) -> Result<()> {
     db.conn().execute("DELETE FROM entries WHERE id = ?1", params![id])?;
     Ok(())
