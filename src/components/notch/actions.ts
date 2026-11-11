@@ -1,6 +1,7 @@
 import * as api from "../../lib/api";
 import type { AbsenceResolution, Project } from "../../lib/types";
 import { ptBR } from "../../i18n/pt-BR";
+import { useNotePrompt } from "../../stores/notePrompt";
 import { toast } from "../../stores/toast";
 import { useTracker } from "../../stores/tracker";
 
@@ -29,8 +30,12 @@ export async function switchTo(p: Project) {
   if (await run(() => api.switchProject(p.id).then(() => true))) toast(t.switched(p.name));
 }
 
+/** Pausing from the notch asks for a note about the closed block (switching does not). */
 export async function pause() {
-  if (await run(() => api.pauseClock().then(() => true))) toast(t.paused);
+  const r = await run(() => api.pauseClock().then((closed) => ({ closed })));
+  if (!r) return;
+  toast(t.paused);
+  useNotePrompt.getState().ask(r.closed);
 }
 
 export async function resume() {
@@ -44,7 +49,15 @@ export async function togglePause() {
 }
 
 export async function stop() {
-  if (await run(() => api.stopClock().then(() => true))) toast(t.stopped, undoable);
+  const r = await run(() => api.stopClock().then((closed) => ({ closed })));
+  if (!r) return;
+  toast(t.stopped, undoable);
+  useNotePrompt.getState().ask(r.closed);
+}
+
+/** Saving a note keeps the stop's undo toast (no toast on success). */
+export async function saveNote(id: number, note: string | null) {
+  await run(() => api.setEntryNote(id, note));
 }
 
 export async function resolve(r: AbsenceResolution, moveName?: string): Promise<boolean> {

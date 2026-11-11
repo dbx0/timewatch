@@ -97,6 +97,7 @@ export function DayView({ day, today, now, reloadKey, onDayChange, onBack }: Pro
             seg={seg}
             projects={projects}
             onUpdate={(id, patch) => void run(() => api.updateEntry(id, patch))}
+            onNote={(id, note) => void run(() => api.setEntryNote(id, note))}
             onDelete={(id) =>
               void run(
                 () => api.deleteEntry(id),

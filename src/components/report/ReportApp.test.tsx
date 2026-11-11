@@ -10,6 +10,7 @@ vi.mock("../../lib/api", () => ({
   updateEntry: vi.fn(),
   deleteEntry: vi.fn(),
   unmarkLunch: vi.fn(),
+  setEntryNote: vi.fn(),
   undo: vi.fn(),
   exportWeek: vi.fn(),
   onChanged: vi.fn(),
@@ -299,5 +300,51 @@ describe("DayView", () => {
   it("shows holiday in the jornada card", async () => {
     await openDay({ isHoliday: true });
     expect(screen.getByText("Jornada (feriado)")).toBeTruthy();
+  });
+
+  it("shows an entry's note on one truncated secondary line", async () => {
+    await openDay({ segments: [seg(7, "09:00", "12:00", false, "revisei o PR do login")] });
+    const note = screen.getByText("revisei o PR do login");
+    expect(note.className).toContain("truncate");
+    expect(note.className).toContain("text-mute");
+  });
+
+  it("edits a note in a small popover; Enter saves and reloads", async () => {
+    vi.mocked(api.setEntryNote).mockResolvedValue({} as never);
+    await openDay({ segments: [seg(7, "09:00", "12:00", false, "rascunho")] });
+    const n = vi.mocked(api.getDay).mock.calls.length;
+    fireEvent.click(screen.getByRole("button", { name: "Editar nota" }));
+    const field = screen.getByRole("textbox", { name: "Nota" }) as HTMLTextAreaElement;
+    expect(field.value).toBe("rascunho");
+    fireEvent.change(field, { target: { value: "deploy em produção" } });
+    fireEvent.keyDown(field, { key: "Enter" });
+    await flush();
+    expect(api.setEntryNote).toHaveBeenCalledWith(7, "deploy em produção");
+    expect(vi.mocked(api.getDay).mock.calls.length).toBeGreaterThan(n);
+  });
+
+  it("adds a note to an entry without one", async () => {
+    vi.mocked(api.setEntryNote).mockResolvedValue({} as never);
+    await openDay({ segments: [seg(7, "09:00", "12:00")] });
+    fireEvent.click(screen.getByRole("button", { name: "Adicionar nota" }));
+    const field = screen.getByRole("textbox", { name: "Nota" });
+    fireEvent.change(field, { target: { value: "reunião" } });
+    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
+    await flush();
+    expect(api.setEntryNote).toHaveBeenCalledWith(7, "reunião");
+  });
+
+  it("clearing a note saves null; Esc cancels", async () => {
+    vi.mocked(api.setEntryNote).mockResolvedValue({} as never);
+    await openDay({ segments: [seg(7, "09:00", "12:00", false, "velha")] });
+    fireEvent.click(screen.getByRole("button", { name: "Editar nota" }));
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Nota" }), { key: "Escape" });
+    await flush();
+    expect(api.setEntryNote).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Editar nota" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Nota" }), { target: { value: "  " } });
+    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
+    await flush();
+    expect(api.setEntryNote).toHaveBeenCalledWith(7, null);
   });
 });

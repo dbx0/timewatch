@@ -2,6 +2,7 @@ import { motion } from "framer-motion";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import * as api from "../../lib/api";
 import type { HitRect, OverlayConfig } from "../../lib/types";
+import { useNotePrompt } from "../../stores/notePrompt";
 import { toast, useToasts } from "../../stores/toast";
 import { liveSessionMs, useTracker } from "../../stores/tracker";
 import { ToastHost } from "../ui/Toast";
@@ -10,6 +11,7 @@ import { AbsencePrompt } from "./AbsencePrompt";
 import { AllProjects } from "./AllProjects";
 import { CreateProject } from "./CreateProject";
 import { focusRequested, isFocusEcho, isTyping, requestKeyboard } from "./keyboard";
+import { NotePrompt } from "./NotePrompt";
 import { Panel } from "./Panel";
 import { Pill, STRIP_PILL } from "./Pill";
 import { ptBR } from "../../i18n/pt-BR";
@@ -50,6 +52,9 @@ export function NotchApp() {
   const pending = snapshot?.pendingAbsence ?? null;
   const pendingRef = useRef(pending);
   pendingRef.current = pending;
+  const noteFor = useNotePrompt((st) => st.closed);
+  const noteRef = useRef(noteFor);
+  noteRef.current = noteFor;
   const configRef = useRef(config);
   configRef.current = config;
   const closeTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -93,8 +98,8 @@ export function NotchApp() {
 
   const closePanel = useCallback(() => {
     clearTimers();
-    // The absence question keeps the panel open until it is answered.
-    if (pendingRef.current) return;
+    // The absence question and the note prompt keep the panel open until answered.
+    if (pendingRef.current || noteRef.current) return;
     pinnedRef.current = false;
     setOpen(false);
     setView({ kind: "main" });
@@ -225,6 +230,22 @@ export function NotchApp() {
     }
   }, [pending, openPanel, closePanel]);
 
+  // After a pause/stop from the notch the note field takes over: pinned, with keyboard focus
+  // (user action, so taking focus is fine). Done (saved or skipped): close unless hovered.
+  useEffect(() => {
+    if (!noteFor) return;
+    clearTimers();
+    pinnedRef.current = true;
+    requestKeyboard();
+    setOpen(true);
+    setView({ kind: "main" });
+  }, [noteFor, setOpen]);
+  const noteDone = useCallback(() => {
+    pinnedRef.current = false;
+    noteRef.current = null;
+    if (!hoveringRef.current) closePanel();
+  }, [closePanel]);
+
   // Backend notices (e.g. clock stopped when the app closed) become a toast once.
   const lastNotice = useRef<string | null>(null);
   const notice = snapshot?.notice ?? null;
@@ -311,6 +332,8 @@ export function NotchApp() {
             />
             {pending ? (
               <AbsencePrompt onResolved={() => (pinnedRef.current = false)} />
+            ) : noteFor ? (
+              <NotePrompt onDone={noteDone} />
             ) : view.kind === "all" ? (
               <AllProjects onBack={toMain} onCreate={() => setView({ kind: "create", name: "" })} />
             ) : view.kind === "create" ? (

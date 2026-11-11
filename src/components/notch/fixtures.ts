@@ -45,6 +45,7 @@ export function apiMock() {
     resolveAbsence: ok(),
     undo: vi.fn(() => Promise.resolve(true)),
     createProject: ok(),
+    setEntryNote: ok(),
     openWindow: ok(),
     overlaySetHitRect: ok(),
     overlaySetExpanded: ok(),

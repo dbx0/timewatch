@@ -26,7 +26,7 @@ Frontend (`src`): `views/` (Notch, Report, Settings, Onboarding, escolhidos pela
 
 Estado e relógio: `get_snapshot`, `switch_project`, `pause_clock`, `resume_clock`, `stop_clock`, `resolve_absence`, `undo`.
 Projetos: `create_project`, `update_project`.
-Relatórios e entradas: `get_week`, `get_day`, `add_entry`, `update_entry`, `delete_entry`, `unmark_lunch`.
+Relatórios e entradas: `get_week`, `get_day`, `add_entry`, `update_entry`, `delete_entry`, `set_entry_note`, `unmark_lunch`. `pause_clock` e `stop_clock` devolvem o bloco fechado (`ClosedEntry`), usado pelo notch para pedir a nota.
 Configurações e exportação: `get_settings`, `set_settings`, `export_week`.
 Janelas e overlay: `open_window`, `overlay_set_hit_rect`, `overlay_set_expanded`, `overlay_focus`, `get_overlay_config`.
 Primeira execução: `finish_onboarding`, `skip_onboarding`.
@@ -59,7 +59,7 @@ O usuário resolve com `resolve_absence`: descontar, marcar como almoço, manter
 
 ## Dados
 
-SQLite em `app_data_dir()/timewatch.sqlite3`. Tempo em milissegundos UTC (`i64`); arredondamento só na exibição e exportação. Limites de dia vêm da meia-noite local pelo fuso, nunca de `início + 24h`, então dias de horário de verão (23h/25h) funcionam. Entradas que cruzam a meia-noite são divididas entre os dois dias nos relatórios.
+SQLite em `app_data_dir()/timewatch.sqlite3` (schema v2: `entries.note`, migrações por `PRAGMA user_version`). Tempo em milissegundos UTC (`i64`); arredondamento só na exibição e exportação. Limites de dia vêm da meia-noite local pelo fuso, nunca de `início + 24h`, então dias de horário de verão (23h/25h) funcionam. Entradas que cruzam a meia-noite são divididas entre os dois dias nos relatórios.
 
 ## Limitações conhecidas
 
