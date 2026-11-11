@@ -2,7 +2,7 @@ export const ptBR = {
   language: {
     label: "Idioma",
     hint: "Muda o app inteiro na hora, inclusive o menu da bandeja e as exportações.",
-    system: "Automático (idioma do sistema)",
+    system: "Automático (sistema)",
   },
   ui: {
     ok: "OK",

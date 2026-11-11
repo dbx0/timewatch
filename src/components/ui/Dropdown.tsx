@@ -84,14 +84,14 @@ export function Dropdown<T extends string | number>({ value, options, onChange, 
             openList();
           }
         }}
-        className={`inline-flex cursor-pointer select-none items-center gap-2 rounded-[9px] bg-raise px-2.5 py-1.5 text-left text-text outline-none transition hover:bg-raise2 focus-visible:ring-2 focus-visible:ring-accent2 ${className}`}
+        className={`inline-flex max-w-full cursor-pointer select-none items-center gap-2 whitespace-nowrap rounded-[9px] bg-raise px-2.5 py-1.5 text-left text-text outline-none transition hover:bg-raise2 focus-visible:ring-2 focus-visible:ring-accent2 ${className}`}
       >
         {renderValue ? (
           renderValue(sel)
         ) : (
           <>
             <Dot color={sel?.color} />
-            <span>{sel?.label}</span>
+            <span className="min-w-0 truncate">{sel?.label}</span>
           </>
         )}
         <span aria-hidden className="text-[10px] text-dim">▾</span>
@@ -121,7 +121,7 @@ export function Dropdown<T extends string | number>({ value, options, onChange, 
                 } ${o.value === value ? "font-semibold" : ""}`}
               >
                 <Dot color={o.color} />
-                <span className="flex-1">{o.label}</span>
+                <span className="flex-1 whitespace-nowrap">{o.label}</span>
                 {o.value === value && <span aria-hidden className="text-accent2">✓</span>}
               </div>
             </div>

@@ -131,7 +131,7 @@ describe("SettingsApp", () => {
     expect(screen.getByText("Idioma")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Idioma" }));
     const names = screen.getAllByRole("option").map((o) => o.textContent);
-    expect(names).toEqual(expect.arrayContaining(["Automático (idioma do sistema)✓", "Português", "English", "Español"]));
+    expect(names).toEqual(expect.arrayContaining(["Automático (sistema)✓", "Português", "English", "Español"]));
     fireEvent.click(screen.getByText("English"));
     expect(api.setSettings).toHaveBeenCalledWith({ ...base, language: "en" });
   });

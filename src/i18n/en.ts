@@ -4,7 +4,7 @@ export const en: Strings = {
   language: {
     label: "Language",
     hint: "Changes the whole app right away, including the tray menu and exports.",
-    system: "Automatic (system language)",
+    system: "System default",
   },
   ui: {
     ok: "OK",

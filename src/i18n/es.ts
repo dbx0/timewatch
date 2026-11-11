@@ -4,7 +4,7 @@ export const es: Strings = {
   language: {
     label: "Idioma",
     hint: "Cambia toda la app al instante, incluidos el menú de la bandeja y las exportaciones.",
-    system: "Automático (idioma del sistema)",
+    system: "Según el sistema",
   },
   ui: {
     ok: "OK",
