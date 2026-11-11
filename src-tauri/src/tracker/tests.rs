@@ -414,6 +414,64 @@ fn update_entry_rejects_inverted_range() {
 }
 
 #[test]
+fn add_entry_rejects_end_in_the_future() {
+    let (mut tr, a, _) = setup();
+    let r = tr.add_entry(a.id, t(11, 0), t(13, 0), t(12, 0));
+    assert!(matches!(r, Err(TrackerError::FutureEnd)));
+    assert_eq!(r.unwrap_err().to_string(), "O registro não pode terminar no futuro");
+    assert!(all_entries(&tr).is_empty());
+    // Ending exactly now is fine.
+    tr.add_entry(a.id, t(11, 0), t(12, 0), t(12, 0)).unwrap();
+}
+
+#[test]
+fn update_entry_rejects_end_in_the_future() {
+    let (mut tr, a, _) = setup();
+    let en = tr.add_entry(a.id, t(9, 0), t(10, 0), t(12, 0)).unwrap();
+    let r = tr.update_entry(en.id, None, Some(t(15, 0)), None, t(12, 0));
+    assert!(matches!(r, Err(TrackerError::FutureEnd)));
+    // Moving a closed entry entirely into the future too.
+    let r = tr.update_entry(en.id, Some(t(13, 0)), Some(t(14, 0)), None, t(12, 0));
+    assert!(matches!(r, Err(TrackerError::FutureEnd)));
+    // Closing the running entry in the future would double count as well.
+    tr.switch_to(a.id, t(11, 0)).unwrap();
+    let open = repo::open_entry(&tr.db).unwrap().unwrap();
+    let r = tr.update_entry(open.id, None, Some(t(13, 0)), None, t(12, 0));
+    assert!(matches!(r, Err(TrackerError::FutureEnd)));
+    assert_eq!(all_entries(&tr), vec![en, open]);
+}
+
+#[test]
+fn clock_refuses_to_start_before_a_future_entry() {
+    // Legacy data (created before the future-end check) must not cause overlaps.
+    let (mut tr, a, b) = setup();
+    repo::insert_entry(&tr.db, a.id, t(11, 0), Some(t(13, 0))).unwrap();
+    let before = all_entries(&tr);
+    assert!(matches!(tr.switch_to(b.id, t(12, 0)), Err(TrackerError::FutureEnd)));
+    assert_eq!(all_entries(&tr), before);
+    // After that entry ends, the clock starts normally.
+    tr.switch_to(b.id, t(13, 0)).unwrap();
+    tr.pause(t(13, 30)).unwrap();
+    repo::insert_entry(&tr.db, a.id, t(13, 40), Some(t(14, 0))).unwrap();
+    assert!(matches!(tr.resume(t(13, 45)), Err(TrackerError::FutureEnd)));
+    tr.resume(t(14, 0)).unwrap();
+}
+
+#[test]
+fn resolving_absence_refuses_with_a_future_entry() {
+    let (mut tr, a, b) = setup();
+    tr.switch_to(a.id, t(9, 0)).unwrap();
+    assert!(tr.begin_absence(&tz(), t(10, 0), t(10, 40), AbsenceReason::Idle).unwrap());
+    repo::insert_entry(&tr.db, b.id, t(11, 0), Some(t(12, 0))).unwrap();
+    let before = all_entries(&tr);
+    let r = tr.resolve_absence(&tz(), AbsenceResolution::Discount, t(10, 45));
+    assert!(matches!(r, Err(TrackerError::FutureEnd)));
+    assert_eq!(all_entries(&tr), before);
+    // The question stays so it can be answered later.
+    assert!(snap(&tr, t(10, 45)).pending_absence.is_some());
+}
+
+#[test]
 fn update_entry_rejects_overlap() {
     let (mut tr, a, b) = setup();
     let x = tr.add_entry(a.id, t(8, 0), t(9, 0), t(12, 0)).unwrap();
@@ -552,4 +610,6 @@ fn serde_shapes() {
         json!({"start": 1, "end": 2, "reason": "idle", "projectId": 3})
     );
     assert_eq!(to_value(TrackerError::Overlap).unwrap(), json!("Esse horário sobrepõe outro registro"));
+    assert_eq!(to_value(TrackerError::FutureEnd).unwrap(), json!("O registro não pode terminar no futuro"));
 }
+

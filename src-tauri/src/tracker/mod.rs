@@ -135,6 +135,8 @@ pub enum TrackerError {
     InvalidRange,
     #[error("Esse horário sobrepõe outro registro")]
     Overlap,
+    #[error("O registro não pode terminar no futuro")]
+    FutureEnd,
     #[error("Nenhuma sessão ativa")]
     NoSession,
 }
@@ -235,16 +237,30 @@ fn bump_heartbeat(db: &Db, at: Ms) -> Result<()> {
     Ok(())
 }
 
-/// Rejects inverted ranges and overlaps (open entries end at `now`; touching is fine).
+/// Rejects inverted ranges, ends in the future (the clock would count that time again) and
+/// overlaps (open entries end at `now`; touching is fine).
 fn validate_range(db: &Db, exclude: Option<i64>, start: Ms, end: Ms, now: Ms) -> Result<()> {
     if start >= end {
         return Err(TrackerError::InvalidRange);
+    }
+    if end > now {
+        return Err(TrackerError::FutureEnd);
     }
     let clash = repo::entries_between(db, start, end)?.into_iter().any(|o| {
         Some(o.id) != exclude && start < o.end.unwrap_or(now) && o.start < end
     });
     if clash {
         return Err(TrackerError::Overlap);
+    }
+    Ok(())
+}
+
+/// Refuses to open an entry at `now` while a closed entry ends after it (legacy data from before
+/// `validate_range` rejected future ends): the open entry would overlap it.
+fn ensure_no_future_entry(db: &Db, now: Ms) -> Result<()> {
+    let future = repo::entries_between(db, now, Ms::MAX)?.into_iter().any(|o| o.end.is_some_and(|e| e > now));
+    if future {
+        return Err(TrackerError::FutureEnd);
     }
     Ok(())
 }
@@ -291,6 +307,7 @@ impl Tracker {
         let pending = self.pending.clone();
         self.run(true, |db, log| {
             project(db, pid)?;
+            ensure_no_future_entry(db, now)?;
             log.push(UndoOp::RestorePending(pending));
             record_session(db, log)?;
             if let Some(o) = &open {
@@ -370,6 +387,7 @@ impl Tracker {
         };
         let pending = self.pending.clone();
         self.run(true, |db, log| {
+            ensure_no_future_entry(db, now)?;
             log.push(UndoOp::RestorePending(pending));
             record_session(db, log)?;
             insert_entry(db, log, s.project_id, now, None)?;
@@ -458,6 +476,7 @@ impl Tracker {
             if let AbsenceResolution::MoveTo(pid) = res {
                 project(db, pid)?;
             }
+            ensure_no_future_entry(db, now)?;
             let back = a.end.min(now).max(a.start);
             let (s, _) = record_session(db, log)?;
             let mut s = running_session(s, &open);
