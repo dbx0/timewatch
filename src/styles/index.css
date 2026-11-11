@@ -40,6 +40,9 @@ body,
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
+html.framed,
+html.framed body,
+html.framed #root,
 html.overlay,
 html.overlay body,
 html.overlay #root {

@@ -9,6 +9,15 @@ export const ptBR = {
     prevMonth: "Mês anterior",
     nextMonth: "Próximo mês",
   },
+  titlebar: {
+    minimize: "Minimizar",
+    maximize: "Maximizar",
+    restore: "Restaurar",
+    close: "Fechar",
+    report: "Horas",
+    settings: "Configurações",
+    onboarding: "Bem-vindo",
+  },
   notch: {
     idle: "Sem projeto rodando",
     idleLeft: "Sem projeto",

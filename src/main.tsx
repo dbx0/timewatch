@@ -17,6 +17,8 @@ const view = new URLSearchParams(location.search).get("view") ?? "";
 const View = views[view] ?? Report;
 // The overlay window is transparent; only the pill/panel is painted.
 if (view === "notch") document.documentElement.classList.add("overlay");
+// Borderless app windows are transparent too, so the frame's rounded corners show.
+else document.documentElement.classList.add("framed");
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>

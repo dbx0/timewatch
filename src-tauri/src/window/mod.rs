@@ -300,8 +300,8 @@ fn start_monitor_poll(app: AppHandle) {
 /// Creates the window for `kind` (`report`, `settings`, `onboarding`) or focuses it if it exists.
 pub fn create_or_focus(app: &AppHandle, kind: &str) -> Result<(), String> {
     let (w, h, center, resizable, title) = match kind {
-        "report" => (1020.0, 720.0, false, true, "Timewatch"),
-        "settings" => (780.0, 600.0, false, true, "Ajustes"),
+        "report" => (1020.0, 720.0, false, true, "Horas"),
+        "settings" => (780.0, 600.0, false, true, "Configurações"),
         "onboarding" => (640.0, 560.0, true, false, "Bem-vindo"),
         _ => return Err(format!("Janela desconhecida: {kind}")),
     };
@@ -314,7 +314,10 @@ pub fn create_or_focus(app: &AppHandle, kind: &str) -> Result<(), String> {
     let mut b = WebviewWindowBuilder::new(app, kind, WebviewUrl::App(format!("index.html?view={kind}").into()))
         .title(title)
         .inner_size(w, h)
-        .resizable(resizable);
+        .resizable(resizable)
+        .decorations(false)
+        .transparent(true)
+        .shadow(true);
     if center {
         b = b.center();
     }
