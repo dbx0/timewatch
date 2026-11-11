@@ -8,6 +8,8 @@ import type { OverlayConfig, TrackerSnapshot } from "../../lib/types";
 import { useTracker } from "../../stores/tracker";
 import { snapshot } from "./fixtures";
 import { NotchApp } from "./NotchApp";
+import { resetFocusRequests } from "./keyboard";
+import { toast, useToasts } from "../../stores/toast";
 
 const notch: OverlayConfig = { mode: "notch", notchWidth: 220, notchHeight: 38, pillWidth: 460, pillHeight: 38 };
 const strip: OverlayConfig = { mode: "strip", notchWidth: null, notchHeight: null, pillWidth: 160, pillHeight: 6 };
@@ -29,6 +31,8 @@ async function mount(config: OverlayConfig = notch, snap = snapshot()) {
 describe("NotchApp", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    resetFocusRequests();
+    act(() => useToasts.getState().dismiss());
     useTracker.setState({ snapshot: null, snapAt: 0, now: 0 });
     vi.mocked(api.onOverlayHover).mockImplementation(async (cb) => ((hover = cb), () => {}));
     vi.mocked(api.onOverlayExpanded).mockImplementation(async (cb) => ((expanded = cb), () => {}));
@@ -67,10 +71,24 @@ describe("NotchApp", () => {
     expect(api.overlaySetExpanded).toHaveBeenLastCalledWith(false);
   });
 
-  it("a click inside pins the panel; Esc closes it", async () => {
+  it("a plain click (project row) does not pin: hover-out still closes", async () => {
     await mount();
     act(() => hover(true));
-    fireEvent.pointerDown(screen.getByText("Ver horas da semana"));
+    const row = screen.getByText("Migração SAP");
+    fireEvent.pointerDown(row);
+    await act(async () => fireEvent.click(row));
+    expect(api.switchProject).toHaveBeenCalledWith(1);
+    act(() => hover(false));
+    act(() => void vi.advanceTimersByTime(460));
+    expect(state()).toBe("closed");
+    expect(api.overlayFocus).not.toHaveBeenCalled();
+  });
+
+  it("focusing the search pins and takes keyboard focus; Esc closes", async () => {
+    await mount();
+    act(() => hover(true));
+    act(() => screen.getByPlaceholderText("Trocar para… ou criar projeto").focus());
+    expect(api.overlayFocus).toHaveBeenCalledTimes(1);
     act(() => hover(false));
     act(() => void vi.advanceTimersByTime(1000));
     expect(state()).toBe("open");
@@ -78,9 +96,30 @@ describe("NotchApp", () => {
     expect(state()).toBe("closed");
   });
 
-  it("overlay://expanded opens pinned; false closes", async () => {
+  it("blur closes a pinned panel but not a hover-opened one", async () => {
+    await mount();
+    act(() => hover(true));
+    fireEvent.blur(window);
+    expect(state()).toBe("open");
+    act(() => expanded(true));
+    fireEvent.blur(window);
+    expect(state()).toBe("closed");
+  });
+
+  it("clicking the pill area of the open panel closes it", async () => {
     await mount();
     act(() => expanded(true));
+    fireEvent.click(document.querySelector("[data-pill-area]") as HTMLElement);
+    expect(state()).toBe("closed");
+  });
+
+  it("overlay://expanded opens pinned with keyboard focus; false closes", async () => {
+    await mount();
+    act(() => expanded(true));
+    expect(api.overlayFocus).toHaveBeenCalledTimes(1);
+    // The echo of our own overlay_focus does not ask again.
+    act(() => expanded(true));
+    expect(api.overlayFocus).toHaveBeenCalledTimes(1);
     act(() => hover(false));
     act(() => void vi.advanceTimersByTime(1000));
     expect(state()).toBe("open");
@@ -139,5 +178,116 @@ describe("NotchApp", () => {
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "Criar e iniciar" })));
     expect(api.createProject).toHaveBeenCalledWith("Novo", "Acme", expect.any(String));
     expect(api.switchProject).toHaveBeenCalledWith(9);
+  });
+});
+
+describe("NotchApp toast under the collapsed pill", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetFocusRequests();
+    useTracker.setState({ snapshot: null, snapAt: 0, now: 0 });
+    vi.mocked(api.onOverlayHover).mockImplementation(async (cb) => ((hover = cb), () => {}));
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+  });
+  afterEach(() => {
+    act(() => useToasts.getState().dismiss());
+    vi.useRealTimers();
+  });
+
+  it("hovering the undo toast does not open the panel", async () => {
+    await mount();
+    act(() => toast("Relógio parado", { undo: () => {} }));
+    fireEvent.pointerEnter(document.querySelector("[data-hit=toast]") as HTMLElement);
+    act(() => hover(true));
+    act(() => void vi.advanceTimersByTime(200));
+    expect(state()).toBe("closed");
+    fireEvent.pointerLeave(document.querySelector("[data-hit=toast]") as HTMLElement);
+    fireEvent.pointerEnter(document.querySelector("[data-hit=surface]") as HTMLElement);
+    expect(state()).toBe("open");
+  });
+
+  it("with an undo toast, hovering the pill still opens", async () => {
+    await mount();
+    act(() => toast("Relógio parado", { undo: () => {} }));
+    act(() => hover(true));
+    act(() => void vi.advanceTimersByTime(100));
+    expect(state()).toBe("open");
+  });
+});
+
+describe("NotchApp hit rect", () => {
+  const W = 520;
+  const sizeOf = (el: HTMLElement): [number, number] => {
+    if (el.dataset.hit === "surface") {
+      const c = el.firstElementChild as HTMLElement | null;
+      if (!c) return [0, 0];
+      if (c.hasAttribute("data-panel")) return [440, 500];
+      const kind = c.dataset.pill;
+      return kind === "notch" ? [460, 38] : kind === "strip" ? [160, 6] : kind === "grown" ? [280, 32] : [0, 0];
+    }
+    if (el.dataset.hit === "toast") return el.querySelector("[role=status]") ? [200, 40] : [0, 0];
+    return [0, 0];
+  };
+  const topOf = (el: HTMLElement): number => {
+    if (el.dataset.hit !== "toast") return 0;
+    const prev = el.previousElementSibling as HTMLElement;
+    return sizeOf(prev)[1] + (el.classList.contains("mt-2") ? 8 : 0);
+  };
+  const descs: Record<string, PropertyDescriptor | undefined> = {};
+  const props: Record<string, (el: HTMLElement) => number> = {
+    offsetWidth: (el) => sizeOf(el)[0],
+    offsetHeight: (el) => sizeOf(el)[1],
+    offsetLeft: (el) => (W - sizeOf(el)[0]) / 2,
+    offsetTop: topOf,
+  };
+  const last = () => vi.mocked(api.overlaySetHitRect).mock.lastCall?.[0];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetFocusRequests();
+    useTracker.setState({ snapshot: null, snapAt: 0, now: 0 });
+    vi.mocked(api.onOverlayHover).mockImplementation(async (cb) => ((hover = cb), () => {}));
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    for (const [k, f] of Object.entries(props)) {
+      descs[k] = Object.getOwnPropertyDescriptor(HTMLElement.prototype, k);
+      Object.defineProperty(HTMLElement.prototype, k, {
+        configurable: true,
+        get(this: HTMLElement) {
+          return f(this);
+        },
+      });
+    }
+  });
+  afterEach(() => {
+    act(() => useToasts.getState().dismiss());
+    vi.useRealTimers();
+    for (const k of Object.keys(props)) Object.defineProperty(HTMLElement.prototype, k, descs[k]!);
+  });
+
+  it("pill when collapsed, panel when open, pill again after closing", async () => {
+    await mount();
+    expect(last()).toEqual({ x: 30, y: 0, w: 460, h: 38 });
+    act(() => hover(true));
+    expect(last()).toEqual({ x: 40, y: 0, w: 440, h: 500 });
+    act(() => hover(false));
+    act(() => void vi.advanceTimersByTime(460));
+    expect(last()).toEqual({ x: 30, y: 0, w: 460, h: 38 });
+  });
+
+  it("strip: bar, then the grown pill on hover", async () => {
+    await mount(strip);
+    expect(last()).toEqual({ x: 180, y: 0, w: 160, h: 6 });
+    act(() => hover(true));
+    expect(last()).toEqual({ x: 120, y: 0, w: 280, h: 32 });
+  });
+
+  it("includes the toast only while it offers undo, with no gap under the pill", async () => {
+    await mount();
+    act(() => toast("Agora em X"));
+    expect(last()).toEqual({ x: 30, y: 0, w: 460, h: 38 });
+    act(() => toast("Relógio parado", { undo: () => {} }));
+    expect(last()).toEqual({ x: 30, y: 0, w: 460, h: 78 });
+    act(() => useToasts.getState().dismiss());
+    expect(last()).toEqual({ x: 30, y: 0, w: 460, h: 38 });
   });
 });

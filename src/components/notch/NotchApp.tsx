@@ -9,14 +9,16 @@ import { undoable } from "./actions";
 import { AbsencePrompt } from "./AbsencePrompt";
 import { AllProjects } from "./AllProjects";
 import { CreateProject } from "./CreateProject";
-import { isFocusEcho } from "./keyboard";
+import { focusRequested, isFocusEcho, isTyping, requestKeyboard } from "./keyboard";
 import { Panel } from "./Panel";
-import { Pill } from "./Pill";
+import { Pill, STRIP_PILL } from "./Pill";
 
 /** Unpinned panel closes this long after the cursor leaves. */
 export const CLOSE_DELAY = 450;
 /** Strip mode: the bar grows into the pill first; the panel opens if the cursor stays. */
 export const STRIP_OPEN_DELAY = 300;
+/** With an undo toast under the collapsed pill, wait this long to see if the pointer is on the toast. */
+export const TOAST_HOVER_GRACE = 80;
 const PANEL_W = 440;
 const SPRING = { type: "spring", stiffness: 420, damping: 32 } as const;
 /** Until `get_overlay_config` answers. */
@@ -50,6 +52,9 @@ export function NotchApp() {
   const toastRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const wantSearchFocus = useRef(false);
+  const overToastRef = useRef(false);
+  const toastUndoRef = useRef(toastUndo);
+  toastUndoRef.current = toastUndo;
 
   const clearTimers = () => {
     clearTimeout(closeTimer.current);
@@ -63,13 +68,21 @@ export function NotchApp() {
     void api.overlaySetExpanded(v).catch(() => {});
   }, []);
 
+  /** Pinning always comes with keyboard focus, so Esc and blur (click outside) can close it. */
+  const pin = useCallback(() => {
+    if (pinnedRef.current) return;
+    pinnedRef.current = true;
+    // Our own overlay_focus echoes `expanded true`; don't ask again for it.
+    if (!focusRequested()) requestKeyboard();
+  }, []);
+
   const openPanel = useCallback(
-    (pin: boolean) => {
+    (withPin: boolean) => {
       clearTimers();
-      if (pin) pinnedRef.current = true;
+      if (withPin) pin();
       setOpen(true);
     },
-    [setOpen],
+    [setOpen, pin],
   );
 
   const closePanel = useCallback(() => {
@@ -82,21 +95,31 @@ export function NotchApp() {
     setGrown(hoveringRef.current && configRef.current.mode === "strip");
   }, [setOpen]);
 
+  /**
+   * Cursor entered the hit rect while collapsed. `onPill` is true when the DOM saw the pointer on
+   * the pill itself; otherwise, with an undo toast showing, wait briefly: hovering the toast must
+   * not open the panel (the toast would jump away).
+   */
+  const hoverOpen = useCallback(
+    (onPill: boolean) => {
+      const strip = configRef.current.mode === "strip";
+      if (strip) setGrown(true);
+      const delay = strip ? STRIP_OPEN_DELAY : toastUndoRef.current && !onPill ? TOAST_HOVER_GRACE : 0;
+      clearTimeout(growTimer.current);
+      if (delay === 0) return openPanel(false);
+      growTimer.current = setTimeout(() => {
+        if (hoveringRef.current && !overToastRef.current) openPanel(false);
+      }, delay);
+    },
+    [openPanel],
+  );
+
   const onHover = useCallback(
     (h: boolean) => {
       hoveringRef.current = h;
       if (h) {
         clearTimeout(closeTimer.current);
-        if (openRef.current) return;
-        if (configRef.current.mode === "notch") {
-          openPanel(false);
-        } else {
-          setGrown(true);
-          clearTimeout(growTimer.current);
-          growTimer.current = setTimeout(() => {
-            if (hoveringRef.current) openPanel(false);
-          }, STRIP_OPEN_DELAY);
-        }
+        if (!openRef.current) hoverOpen(false);
         return;
       }
       clearTimeout(growTimer.current);
@@ -106,7 +129,7 @@ export function NotchApp() {
         closeTimer.current = setTimeout(closePanel, CLOSE_DELAY);
       }
     },
-    [openPanel, closePanel],
+    [hoverOpen, closePanel],
   );
 
   // Backend data and overlay events.
@@ -177,6 +200,7 @@ export function NotchApp() {
   useEffect(() => {
     if (pending) {
       hadPending.current = true;
+      wantSearchFocus.current = false;
       openPanel(false);
     } else if (hadPending.current) {
       hadPending.current = false;
@@ -229,21 +253,32 @@ export function NotchApp() {
   }, []);
 
   const notchInset = config.mode === "notch" ? (config.notchHeight ?? config.pillHeight) : 0;
-  const pillW = config.mode === "notch" ? config.pillWidth : grown ? 280 : config.pillWidth;
+  const pillW = config.mode === "notch" ? config.pillWidth : grown ? STRIP_PILL.w : config.pillWidth;
   const toMain = () => setView({ kind: "main" });
+  // Clicking where the pill was (top of the open panel) closes it.
+  const pillArea =
+    config.mode === "notch" ? { width: config.pillWidth, height: config.pillHeight } : { width: STRIP_PILL.w, height: 16 };
 
   return (
     <div data-view="notch" data-state={open ? "open" : "closed"} className="relative flex w-full flex-col items-center text-[14px] leading-[1.4]">
-      <div ref={surfaceRef}>
+      <div
+        ref={surfaceRef}
+        data-hit="surface"
+        onPointerEnter={() => {
+          if (!openRef.current && hoveringRef.current) hoverOpen(true);
+        }}
+      >
         {open ? (
           <motion.div
-            onPointerDownCapture={() => {
-              pinnedRef.current = true;
+            data-panel
+            onFocusCapture={(e) => {
+              // Typing pins the panel (and makes the window key).
+              if (isTyping(e.target)) pin();
             }}
             initial={{ opacity: 0, scaleX: pillW / PANEL_W, scaleY: 0.12 }}
             animate={{ opacity: 1, scaleX: 1, scaleY: 1 }}
             transition={SPRING}
-            className="rounded-b-[30px] px-[18px] pb-3.5 text-text shadow-[0_24px_60px_rgba(0,0,0,.6),0_0_0_1px_rgba(255,255,255,.04)]"
+            className="relative rounded-b-[30px] px-[18px] pb-3.5 text-text shadow-[0_24px_60px_rgba(0,0,0,.6),0_0_0_1px_rgba(255,255,255,.04)]"
             style={{
               width: PANEL_W,
               paddingTop: 16 + notchInset,
@@ -251,6 +286,13 @@ export function NotchApp() {
               background: config.mode === "notch" ? "#000" : "var(--panel)",
             }}
           >
+            <div
+              data-pill-area
+              aria-hidden
+              onClick={closePanel}
+              className="absolute left-1/2 top-0 -translate-x-1/2 cursor-pointer"
+              style={pillArea}
+            />
             {pending ? (
               <AbsencePrompt onResolved={() => (pinnedRef.current = false)} />
             ) : view.kind === "all" ? (
@@ -267,10 +309,17 @@ export function NotchApp() {
             )}
           </motion.div>
         ) : (
-          <Pill config={config} snapshot={snapshot} sessionMs={sessionMs} grown={grown} onClick={() => openPanel(true)} />
+          <Pill config={config} snapshot={snapshot} sessionMs={sessionMs} grown={grown} onClick={() => openPanel(false)} />
         )}
       </div>
-      <div ref={toastRef} className="mt-2">
+      {/* Collapsed: right under the pill, so the hit rect has no gap over the desktop. */}
+      <div
+        ref={toastRef}
+        data-hit="toast"
+        className={open ? "mt-2" : ""}
+        onPointerEnter={() => (overToastRef.current = true)}
+        onPointerLeave={() => (overToastRef.current = false)}
+      >
         <ToastHost className="pointer-events-none flex justify-center" />
       </div>
     </div>
