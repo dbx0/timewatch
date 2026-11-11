@@ -1,7 +1,4 @@
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn scaffold_runs() {
-        assert_eq!(1 + 1, 2);
-    }
-}
+pub mod model;
+pub mod time;
+
+pub use model::*;
