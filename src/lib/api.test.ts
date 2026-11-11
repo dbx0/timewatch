@@ -14,6 +14,21 @@ describe("api", () => {
     listen.mockReset();
   });
 
+  it("setEntryNote sends the note, blank as null", async () => {
+    await api.setEntryNote(4, "revisei o PR");
+    expect(invoke).toHaveBeenLastCalledWith("set_entry_note", { id: 4, note: "revisei o PR" });
+    await api.setEntryNote(4, "   ");
+    expect(invoke).toHaveBeenLastCalledWith("set_entry_note", { id: 4, note: null });
+    await api.setEntryNote(4, null);
+    expect(invoke).toHaveBeenLastCalledWith("set_entry_note", { id: 4, note: null });
+  });
+
+  it("stopClock resolves to the closed block", async () => {
+    invoke.mockResolvedValueOnce({ id: 1, projectId: 2, start: 3, end: 4 });
+    await expect(api.stopClock()).resolves.toEqual({ id: 1, projectId: 2, start: 3, end: 4 });
+    expect(invoke).toHaveBeenCalledWith("stop_clock");
+  });
+
   it("switchProject invokes switch_project", async () => {
     await api.switchProject(3);
     expect(invoke).toHaveBeenCalledWith("switch_project", { projectId: 3 });

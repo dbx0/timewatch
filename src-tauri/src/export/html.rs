@@ -33,7 +33,7 @@ th:first-child,td:first-child{text-align:left}th{font-size:12px;color:#5a6070;fo
 tr.client td{font-weight:600;background:#f3f5fa;text-align:left}\
 tr.total td{font-weight:600;border-top:2px solid #1a1d24}\
 .extra{display:block;font-size:11px;color:#2f5fd0}.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}\
-.muted{color:#5a6070}\
+.muted{color:#5a6070}td.note{text-align:left;white-space:pre-wrap;color:#3a4050}\
 @media print{body{margin:0;max-width:none;padding:0}.card,tr{break-inside:avoid}h2{break-after:avoid}}";
 
 fn cell(c: &Cell) -> String {
@@ -127,13 +127,14 @@ pub fn html_report<Tz: TimeZone>(
 
     if let Some((days, projects)) = detailed {
         h.push_str(&format!(
-            "<h2>{}</h2><table><thead><tr><th>{}</th><th>{}</th><th>{}</th><th>{}</th><th>{}</th></tr></thead><tbody>",
+            "<h2>{}</h2><table><thead><tr><th>{}</th><th>{}</th><th>{}</th><th>{}</th><th>{}</th><th>{}</th></tr></thead><tbody>",
             esc(t::RECORDS_TITLE),
             esc(t::REC_DATE),
             esc(&format!("{} / {}", t::COL_CLIENT, t::COL_PROJECT)),
             esc(t::REC_START),
             esc(t::REC_END),
             esc(t::REC_HOURS),
+            esc(t::REC_NOTE),
         ));
         for d in days {
             for s in &d.segments {
@@ -142,13 +143,14 @@ pub fn html_report<Tz: TimeZone>(
                     .find(|p| p.id == s.project_id)
                     .map_or(("", ""), |p| (p.client.as_str(), p.name.as_str()));
                 h.push_str(&format!(
-                    "<tr><td>{}</td><td>{} / {}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
+                    "<tr><td>{}</td><td>{} / {}</td><td>{}</td><td>{}</td><td>{}</td><td class=\"note\">{}</td></tr>",
                     d.day.format("%d/%m/%Y"),
                     esc(c),
                     esc(n),
                     hhmm(tz, s.start),
                     hhmm(tz, s.end),
-                    fmt_hours(s.end - s.start)
+                    fmt_hours(s.end - s.start),
+                    esc(s.note.as_deref().unwrap_or(""))
                 ));
             }
         }
@@ -209,6 +211,20 @@ mod tests {
         let projects = tr.projects().unwrap();
         let det = html_report(&r, Some((&days, &projects)), &tz());
         assert!(det.contains("Registros"));
-        assert!(det.contains("<td>06:00</td><td>11:30</td><td>5,5</td>"));
+        assert!(det.contains("<th>Nota</th>"));
+        assert!(det.contains("<td>06:00</td><td>11:30</td><td>5,5</td><td class=\"note\"></td>"));
+    }
+
+    #[test]
+    fn html_detailed_shows_escaped_note() {
+        let (mut tr, r) = report("Acme", "Alpha");
+        let now = r.week_start.and_hms_opt(0, 0, 0).unwrap().and_utc().timestamp_millis() + 5 * 24 * H;
+        let id = r.days.iter().find_map(|d| tr.day_calc(&tz(), *d, now).unwrap().segments.first().map(|s| s.entry_id)).unwrap();
+        tr.set_entry_note(id, Some("<b>deploy</b> & \"testes\"".into())).unwrap();
+        let days: Vec<_> = r.days.iter().map(|d| tr.day_calc(&tz(), *d, now).unwrap()).collect();
+        let projects = tr.projects().unwrap();
+        let det = html_report(&r, Some((&days, &projects)), &tz());
+        assert!(!det.contains("<b>deploy"));
+        assert!(det.contains("<td class=\"note\">&lt;b&gt;deploy&lt;/b&gt; &amp; &quot;testes&quot;</td>"));
     }
 }

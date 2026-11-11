@@ -19,6 +19,8 @@ pub struct Seg {
     pub start: Ms,
     pub end: Ms,
     pub running: bool,
+    #[serde(default)]
+    pub note: Option<String>,
 }
 
 /// Entries clipped to `bounds` (open entries end at `now`), sorted by start.
@@ -35,6 +37,7 @@ pub fn day_segments(entries: &[Entry], bounds: (Ms, Ms), now: Ms) -> Vec<Seg> {
                 start,
                 end,
                 running: e.end.is_none(),
+                note: e.note.clone(),
             })
         })
         .collect();
@@ -347,7 +350,7 @@ mod tests {
         at(&tz(), day, nt)
     }
     fn e(id: i64, p: i64, s: Ms, en: Option<Ms>) -> Entry {
-        Entry { id, project_id: p, start: s, end: en }
+        Entry { id, project_id: p, start: s, end: en, note: None }
     }
     fn lunch(day: NaiveDate, s: &str, en: &str) -> Lunch {
         Lunch { day, start: t_on(day, s), end: t_on(day, en) }

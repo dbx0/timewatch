@@ -27,7 +27,7 @@ fn project_from(r: &Row) -> rusqlite::Result<Project> {
 }
 
 fn entry_from(r: &Row) -> rusqlite::Result<Entry> {
-    Ok(Entry { id: r.get(0)?, project_id: r.get(1)?, start: r.get(2)?, end: r.get(3)? })
+    Ok(Entry { id: r.get(0)?, project_id: r.get(1)?, start: r.get(2)?, end: r.get(3)?, note: r.get(4)? })
 }
 
 pub fn insert_project(db: &Db, name: &str, client: &str, color: &str) -> Result<Project> {
@@ -64,7 +64,7 @@ pub fn insert_entry(db: &Db, project_id: i64, start: Ms, end: Option<Ms>) -> Res
         "INSERT INTO entries(project_id, start, \"end\") VALUES (?1, ?2, ?3)",
         params![project_id, start, end],
     )?;
-    Ok(Entry { id: db.conn().last_insert_rowid(), project_id, start, end })
+    Ok(Entry { id: db.conn().last_insert_rowid(), project_id, start, end, note: None })
 }
 
 pub fn update_entry(db: &Db, e: &Entry) -> Result<()> {
@@ -76,15 +76,21 @@ pub fn update_entry(db: &Db, e: &Entry) -> Result<()> {
 }
 
 /// Inserts the row with its own id, or overwrites the row with that id (used by undo).
-/// Never deletes other rows: a conflicting open entry is an error.
+/// Never deletes other rows: a conflicting open entry is an error. An existing row keeps its
+/// current note (notes are not undoable, so undo must not revert one saved later).
 pub fn put_entry(db: &Db, e: &Entry) -> Result<()> {
     db.conn().execute(
-        "INSERT INTO entries(id, project_id, start, \"end\") VALUES (?1, ?2, ?3, ?4)
+        "INSERT INTO entries(id, project_id, start, \"end\", note) VALUES (?1, ?2, ?3, ?4, ?5)
          ON CONFLICT(id) DO UPDATE SET project_id = excluded.project_id,
              start = excluded.start, \"end\" = excluded.\"end\"",
-        params![e.id, e.project_id, e.start, e.end],
+        params![e.id, e.project_id, e.start, e.end, e.note],
     )?;
     Ok(())
+}
+
+/// Sets (or clears) an entry's note. Returns false when no row has that id.
+pub fn set_entry_note(db: &Db, id: i64, note: Option<&str>) -> Result<bool> {
+    Ok(db.conn().execute("UPDATE entries SET note = ?2 WHERE id = ?1", params![id, note])? > 0)
 }
 
 /// Project ids ordered by their latest activity (`COALESCE(end, now)`), most recent first.
@@ -106,7 +112,7 @@ pub fn get_entry(db: &Db, id: i64) -> Result<Option<Entry>> {
     Ok(db
         .conn()
         .query_row(
-            "SELECT id, project_id, start, \"end\" FROM entries WHERE id = ?1",
+            "SELECT id, project_id, start, \"end\", note FROM entries WHERE id = ?1",
             params![id],
             entry_from,
         )
@@ -117,7 +123,7 @@ pub fn open_entry(db: &Db) -> Result<Option<Entry>> {
     Ok(db
         .conn()
         .query_row(
-            "SELECT id, project_id, start, \"end\" FROM entries WHERE \"end\" IS NULL",
+            "SELECT id, project_id, start, \"end\", note FROM entries WHERE \"end\" IS NULL",
             [],
             entry_from,
         )
@@ -127,7 +133,7 @@ pub fn open_entry(db: &Db) -> Result<Option<Entry>> {
 /// Entries overlapping `[from, to)`, including the open one.
 pub fn entries_between(db: &Db, from: Ms, to: Ms) -> Result<Vec<Entry>> {
     let mut st = db.conn().prepare(
-        "SELECT id, project_id, start, \"end\" FROM entries
+        "SELECT id, project_id, start, \"end\", note FROM entries
          WHERE start < ?2 AND (\"end\" IS NULL OR \"end\" > ?1)
          ORDER BY start, id",
     )?;
@@ -137,7 +143,7 @@ pub fn entries_between(db: &Db, from: Ms, to: Ms) -> Result<Vec<Entry>> {
 
 pub fn last_entries(db: &Db, limit: usize) -> Result<Vec<Entry>> {
     let mut st = db.conn().prepare(
-        "SELECT id, project_id, start, \"end\" FROM entries
+        "SELECT id, project_id, start, \"end\", note FROM entries
          ORDER BY COALESCE(\"end\", start) DESC, id DESC LIMIT ?1",
     )?;
     let rows = st.query_map(params![limit as i64], entry_from)?.collect::<rusqlite::Result<Vec<_>>>()?;
@@ -260,6 +266,30 @@ mod tests {
         assert_eq!(last_entries(&db, 1).unwrap(), vec![b.clone()]);
         delete_entry(&db, b.id).unwrap();
         assert_eq!(get_entry(&db, b.id).unwrap(), None);
+    }
+
+    #[test]
+    fn entry_note_roundtrip_and_preserved_by_time_edits() {
+        let db = Db::open_in_memory().unwrap();
+        let p = insert_project(&db, "A", "C", "#fff").unwrap();
+        let mut a = insert_entry(&db, p.id, 10, Some(20)).unwrap();
+        assert_eq!(a.note, None);
+        assert!(set_entry_note(&db, a.id, Some("fiz X")).unwrap());
+        assert!(!set_entry_note(&db, 999, Some("x")).unwrap());
+        assert_eq!(get_entry(&db, a.id).unwrap().unwrap().note.as_deref(), Some("fiz X"));
+        // editing times (and undo's put_entry over an existing row) keeps the current note
+        a.end = Some(25);
+        update_entry(&db, &a).unwrap();
+        put_entry(&db, &Entry { end: Some(30), note: None, ..a.clone() }).unwrap();
+        let got = get_entry(&db, a.id).unwrap().unwrap();
+        assert_eq!((got.end, got.note.as_deref()), (Some(30), Some("fiz X")));
+        // re-inserting a deleted row (undo of delete) brings its note back
+        delete_entry(&db, a.id).unwrap();
+        put_entry(&db, &got).unwrap();
+        assert_eq!(get_entry(&db, a.id).unwrap(), Some(got.clone()));
+        assert_eq!(entries_between(&db, 0, 100).unwrap(), vec![got]);
+        set_entry_note(&db, a.id, None).unwrap();
+        assert_eq!(get_entry(&db, a.id).unwrap().unwrap().note, None);
     }
 
     #[test]

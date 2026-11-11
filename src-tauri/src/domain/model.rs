@@ -21,7 +21,12 @@ pub struct Entry {
     pub project_id: i64,
     pub start: Ms,
     pub end: Option<Ms>,
+    /// What the user did in this block (trimmed, at most `MAX_NOTE_CHARS`).
+    #[serde(default)]
+    pub note: Option<String>,
 }
+
+pub const MAX_NOTE_CHARS: usize = 500;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

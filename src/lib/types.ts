@@ -16,7 +16,19 @@ export interface Entry {
   projectId: number;
   start: Ms;
   end: Ms | null;
+  note: string | null;
 }
+
+/** The block a pause/stop just closed (for the note prompt). */
+export interface ClosedEntry {
+  id: number;
+  projectId: number;
+  start: Ms;
+  end: Ms;
+}
+
+/** Longest note the backend accepts (chars). */
+export const MAX_NOTE_CHARS = 500;
 
 export interface Lunch {
   day: IsoDate;
@@ -99,6 +111,7 @@ export interface TrackerSnapshot {
   pendingAbsence: Absence | null;
   canUndo: boolean;
   notice: string | null;
+  lastClosedEntry: ClosedEntry | null;
 }
 
 export interface Seg {
@@ -107,6 +120,7 @@ export interface Seg {
   start: Ms;
   end: Ms;
   running: boolean;
+  note: string | null;
 }
 
 export interface ProjectDay {

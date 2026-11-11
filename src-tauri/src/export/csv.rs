@@ -70,10 +70,10 @@ pub(super) fn hhmm<Tz: TimeZone>(tz: &Tz, ms: i64) -> String {
         .map_or_else(String::new, |t| t.with_timezone(tz).naive_local().format("%H:%M").to_string())
 }
 
-/// One row per segment, `HH:MM` in `tz`, exact (unrounded) duration.
+/// One row per segment, `HH:MM` in `tz`, exact (unrounded) duration, and the entry's note.
 pub fn csv_detailed<Tz: TimeZone>(days: &[DayCalc], projects: &[Project], tz: &Tz) -> String {
     let mut out = String::from(BOM);
-    out.push_str(&line(&["data", "cliente", "projeto", "inicio", "fim", "horas"]));
+    out.push_str(&line(&["data", "cliente", "projeto", "inicio", "fim", "horas", "nota"]));
     for d in days {
         for s in &d.segments {
             let (c, n) = names(projects, s.project_id);
@@ -84,6 +84,7 @@ pub fn csv_detailed<Tz: TimeZone>(days: &[DayCalc], projects: &[Project], tz: &T
                 &hhmm(tz, s.start),
                 &hhmm(tz, s.end),
                 &fmt_hours(s.end - s.start),
+                s.note.as_deref().unwrap_or(""),
             ]));
         }
     }
@@ -156,11 +157,27 @@ mod tests {
         let projects = [proj(1, "Alpha", "Acme")];
         let start = tz().with_ymd_and_hms(2026, 11, 11, 9, 0, 0).unwrap().timestamp_millis();
         let end = tz().with_ymd_and_hms(2026, 11, 11, 12, 30, 0).unwrap().timestamp_millis();
-        let seg = Seg { entry_id: 1, project_id: 1, start, end, running: false };
+        let seg = Seg { entry_id: 1, project_id: 1, start, end, running: false, note: None };
         let out = csv_detailed(&[calc(vec![seg], &[(1, 3 * H + H / 2, 0)])], &projects, &tz());
         assert_eq!(
             out,
-            "\u{feff}data;cliente;projeto;inicio;fim;horas\r\n2026-11-11;Acme;Alpha;09:00;12:30;3,5\r\n"
+            "\u{feff}data;cliente;projeto;inicio;fim;horas;nota\r\n2026-11-11;Acme;Alpha;09:00;12:30;3,5;\r\n"
         );
+    }
+
+    #[test]
+    fn csv_detailed_note_is_escaped() {
+        let projects = [proj(1, "Alpha", "Acme")];
+        let start = tz().with_ymd_and_hms(2026, 11, 11, 9, 0, 0).unwrap().timestamp_millis();
+        let note = Some("revisão; \"PR\"\nlinha 2".to_string());
+        let seg = Seg { entry_id: 1, project_id: 1, start, end: start + H, running: false, note };
+        let out = csv_detailed(&[calc(vec![seg], &[(1, H, 0)])], &projects, &tz());
+        assert!(out.ends_with("2026-11-11;Acme;Alpha;09:00;10:00;1;\"revisão; \"\"PR\"\"\nlinha 2\"\r\n"), "{out}");
+    }
+
+    #[test]
+    fn csv_summary_has_no_note_column() {
+        let out = csv_summary(&[], &[], 0);
+        assert!(!out.contains("nota"));
     }
 }

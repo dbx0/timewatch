@@ -15,6 +15,7 @@ pub const REC_DATE: &str = "Data";
 pub const REC_START: &str = "Início";
 pub const REC_END: &str = "Fim";
 pub const REC_HOURS: &str = "Horas";
+pub const REC_NOTE: &str = "Nota";
 pub const PERIOD_TO: &str = "a";
 pub const PROJECTS_SUFFIX: &str = "projetos";
 pub const DAY_NAMES: [&str; 7] = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"];

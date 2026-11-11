@@ -144,12 +144,13 @@ describe("ReportApp", () => {
 });
 
 describe("DayView", () => {
-  const seg = (entryId: number, a: string, b: string, running = false) => ({
+  const seg = (entryId: number, a: string, b: string, running = false, note: string | null = null) => ({
     entryId,
     projectId: 2,
     start: atLocal("2026-11-11", a),
     end: atLocal("2026-11-11", b),
     running,
+    note,
   });
 
   async function openDay(over: Partial<DayCalc> = {}) {
@@ -242,8 +243,8 @@ describe("DayView", () => {
     const b = atLocal("2026-11-12", "00:00");
     await openDay({
       segments: [
-        { entryId: 8, projectId: 2, start: a, end: atLocal("2026-11-11", "02:00"), running: false },
-        { entryId: 9, projectId: 2, start: atLocal("2026-11-11", "22:00"), end: b, running: false },
+        { entryId: 8, projectId: 2, start: a, end: atLocal("2026-11-11", "02:00"), running: false, note: null },
+        { entryId: 9, projectId: 2, start: atLocal("2026-11-11", "22:00"), end: b, running: false, note: null },
       ],
     });
     expect(screen.getByText("continua do dia anterior")).toBeTruthy();

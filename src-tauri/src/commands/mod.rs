@@ -10,7 +10,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use crate::domain::calc::{DayCalc, Grouping, WeekReport};
 use crate::domain::{Entry, Ms, Project, Settings};
 use crate::export::{self, ExportFormat};
-use crate::tracker::{AbsenceResolution, Tracker, TrackerError, TrackerSnapshot};
+use crate::tracker::{AbsenceResolution, ClosedEntry, Tracker, TrackerError, TrackerSnapshot};
 use crate::tray;
 use crate::window::{self, HitRect, OverlayConfig, OverlayState};
 
@@ -120,8 +120,9 @@ pub fn switch_project(app: AppHandle, state: State<AppState>, project_id: i64) -
 }
 
 #[tauri::command]
-pub fn pause_clock(app: AppHandle, state: State<AppState>) -> Result<(), String> {
-    mutate(&app, &state, |t, now| t.pause(now))
+/// Returns the block it closed (none when already paused), for the notch's note prompt.
+pub fn pause_clock(app: AppHandle, state: State<AppState>) -> Result<Option<ClosedEntry>, String> {
+    mutate(&app, &state, |t, now| t.pause(now).map(|_| t.last_closed()))
 }
 
 #[tauri::command]
@@ -130,8 +131,9 @@ pub fn resume_clock(app: AppHandle, state: State<AppState>) -> Result<(), String
 }
 
 #[tauri::command]
-pub fn stop_clock(app: AppHandle, state: State<AppState>) -> Result<(), String> {
-    mutate(&app, &state, |t, now| t.stop(now))
+/// Returns the block it closed (none when it was paused or idle).
+pub fn stop_clock(app: AppHandle, state: State<AppState>) -> Result<Option<ClosedEntry>, String> {
+    mutate(&app, &state, |t, now| t.stop(now).map(|_| t.last_closed()))
 }
 
 #[tauri::command]
@@ -202,6 +204,16 @@ pub fn update_entry(
 #[tauri::command]
 pub fn delete_entry(app: AppHandle, state: State<AppState>, id: i64) -> Result<(), String> {
     mutate(&app, &state, |t, _| t.delete_entry(id))
+}
+
+#[tauri::command]
+pub fn set_entry_note(
+    app: AppHandle,
+    state: State<AppState>,
+    id: i64,
+    note: Option<String>,
+) -> Result<Entry, String> {
+    mutate(&app, &state, |t, _| t.set_entry_note(id, note))
 }
 
 #[tauri::command]

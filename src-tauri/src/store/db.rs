@@ -38,6 +38,9 @@ CREATE TABLE meta(
 );
 ";
 
+/// v2: free-text note per entry.
+const SCHEMA_V2: &str = "ALTER TABLE entries ADD COLUMN note TEXT NULL;";
+
 pub struct Db {
     conn: Connection,
 }
@@ -68,6 +71,12 @@ impl Db {
             tx.pragma_update(None, "user_version", 1)?;
             tx.commit()?;
         }
+        if v < 2 {
+            let tx = self.conn.unchecked_transaction()?;
+            tx.execute_batch(SCHEMA_V2)?;
+            tx.pragma_update(None, "user_version", 2)?;
+            tx.commit()?;
+        }
         Ok(())
     }
 
@@ -84,7 +93,28 @@ mod tests {
     fn migrates_fresh_db() {
         let db = Db::open_in_memory().unwrap();
         let v: i64 = db.conn().query_row("PRAGMA user_version", [], |r| r.get(0)).unwrap();
-        assert_eq!(v, 1);
+        assert_eq!(v, 2);
+    }
+
+    #[test]
+    fn migrates_v1_db_to_v2_keeping_entries() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(SCHEMA_V1).unwrap();
+        conn.pragma_update(None, "user_version", 1).unwrap();
+        conn.execute(
+            "INSERT INTO projects(id, name, client, color, archived, created_at) VALUES (1, 'A', 'C', '#fff', 0, 0)",
+            [],
+        )
+        .unwrap();
+        conn.execute("INSERT INTO entries(id, project_id, start, \"end\") VALUES (7, 1, 10, 20)", []).unwrap();
+        let db = Db::init(conn).unwrap();
+        let v: i64 = db.conn().query_row("PRAGMA user_version", [], |r| r.get(0)).unwrap();
+        assert_eq!(v, 2);
+        let (start, note): (i64, Option<String>) = db
+            .conn()
+            .query_row("SELECT start, note FROM entries WHERE id = 7", [], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap();
+        assert_eq!((start, note), (10, None));
     }
 
     #[test]
@@ -95,7 +125,7 @@ mod tests {
         drop(Db::open(&path).unwrap());
         let db = Db::open(&path).unwrap();
         let v: i64 = db.conn().query_row("PRAGMA user_version", [], |r| r.get(0)).unwrap();
-        assert_eq!(v, 1);
+        assert_eq!(v, 2);
         std::fs::remove_dir_all(&dir).ok();
     }
 }

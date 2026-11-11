@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::domain::calc::{self, DayCalc, Grouping, WeekReport};
 use crate::domain::time::{day_bounds, local_day};
-use crate::domain::{Entry, Lunch, Ms, Project, Settings};
+use crate::domain::{Entry, Lunch, Ms, Project, Settings, MAX_NOTE_CHARS};
 use crate::store::{repo, Db, StoreError};
 pub use undo::{UndoLog, UndoOp};
 
@@ -109,6 +109,16 @@ pub struct RecentProject {
     pub shortcut: Option<u8>,
 }
 
+/// The block a pause/stop just closed, so the notch can offer a note for it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClosedEntry {
+    pub id: i64,
+    pub project_id: i64,
+    pub start: Ms,
+    pub end: Ms,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TrackerSnapshot {
@@ -123,6 +133,9 @@ pub struct TrackerSnapshot {
     pub pending_absence: Option<Absence>,
     pub can_undo: bool,
     pub notice: Option<String>,
+    /// Set by the last operation when it was a pause/stop that closed a block; any other
+    /// mutation (or undo) clears it.
+    pub last_closed_entry: Option<ClosedEntry>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -139,6 +152,8 @@ pub enum TrackerError {
     FutureEnd,
     #[error("Nenhuma sessão ativa")]
     NoSession,
+    #[error("A nota pode ter no máximo 500 caracteres")]
+    NoteTooLong,
 }
 
 impl From<rusqlite::Error> for TrackerError {
@@ -161,6 +176,24 @@ pub struct Tracker {
     pending: Option<Absence>,
     undo: Option<UndoLog>,
     notice: Option<String>,
+    last_closed: Option<ClosedEntry>,
+}
+
+/// What `Tracker::run` does with the undo slot after a successful operation.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum UndoMode {
+    /// The recorded log becomes the undo.
+    Record,
+    /// The undo is cleared.
+    Clear,
+    /// The previous undo stays (operations that are not undoable and touch nothing it restores).
+    Keep,
+}
+
+impl From<bool> for UndoMode {
+    fn from(undoable: bool) -> Self {
+        if undoable { UndoMode::Record } else { UndoMode::Clear }
+    }
 }
 
 // ---- free helpers over the db (used inside transactions) ----
@@ -210,12 +243,12 @@ fn project(db: &Db, id: i64) -> Result<Project> {
     repo::list_projects(db)?.into_iter().find(|p| p.id == id).ok_or(TrackerError::NotFound)
 }
 
-/// Closes `e` at `at` (never before its start). Returns the closed block length.
-fn close_entry(db: &Db, log: &mut UndoLog, e: &Entry, at: Ms) -> Result<i64> {
+/// Closes `e` at `at` (never before its start). Returns the closed block.
+fn close_entry(db: &Db, log: &mut UndoLog, e: &Entry, at: Ms) -> Result<ClosedEntry> {
     log.push(UndoOp::RestoreEntry(e.clone()));
     let end = at.max(e.start);
     repo::update_entry(db, &Entry { end: Some(end), ..e.clone() })?;
-    Ok(end - e.start)
+    Ok(ClosedEntry { id: e.id, project_id: e.project_id, start: e.start, end })
 }
 
 fn insert_entry(db: &Db, log: &mut UndoLog, pid: i64, start: Ms, end: Option<Ms>) -> Result<Entry> {
@@ -267,19 +300,28 @@ fn ensure_no_future_entry(db: &Db, now: Ms) -> Result<()> {
 
 impl Tracker {
     pub fn new(db: Db) -> Tracker {
-        Tracker { db, pending: None, undo: None, notice: None }
+        Tracker { db, pending: None, undo: None, notice: None, last_closed: None }
     }
 
-    /// Runs `f` in one transaction. On success the recorded log becomes the undo
-    /// (or the undo is cleared when `undoable` is false) and the notice is reset.
+    /// Runs `f` in one transaction. On success the undo slot is updated per `mode` (a bool
+    /// means record/clear), and the notice and last closed block are reset.
     /// On error the transaction rolls back and in-memory state is untouched.
-    fn run<T>(&mut self, undoable: bool, f: impl FnOnce(&Db, &mut UndoLog) -> Result<T>) -> Result<T> {
+    fn run<T>(
+        &mut self,
+        mode: impl Into<UndoMode>,
+        f: impl FnOnce(&Db, &mut UndoLog) -> Result<T>,
+    ) -> Result<T> {
         let mut log = UndoLog::default();
         let tx = self.db.conn().unchecked_transaction()?;
         let out = f(&self.db, &mut log)?;
         tx.commit()?;
-        self.undo = undoable.then_some(log);
+        match mode.into() {
+            UndoMode::Record => self.undo = Some(log),
+            UndoMode::Clear => self.undo = None,
+            UndoMode::Keep => {}
+        }
         self.notice = None;
+        self.last_closed = None;
         Ok(out)
     }
 
@@ -296,6 +338,11 @@ impl Tracker {
     pub fn set_user_settings(&mut self, mut s: Settings) -> Result<()> {
         s.onboarded = self.settings()?.onboarded;
         self.set_settings(s)
+    }
+
+    /// The block the last pause/stop closed (cleared by any later mutation).
+    pub fn last_closed(&self) -> Option<ClosedEntry> {
+        self.last_closed
     }
 
     pub fn clear_notice(&mut self) {
@@ -374,14 +421,17 @@ impl Tracker {
             };
         };
         let pending = self.pending.clone();
-        self.run(true, |db, log| {
+        let closed = self.run(true, |db, log| {
             log.push(UndoOp::RestorePending(pending));
             let (s, _) = record_session(db, log)?;
             let mut s = running_session(s, &open);
-            s.accum_ms += close_entry(db, log, &open, now)?;
-            save_session(db, Some(&s), true)
+            let closed = close_entry(db, log, &open, now)?;
+            s.accum_ms += closed.end - closed.start;
+            save_session(db, Some(&s), true)?;
+            Ok(closed)
         })?;
         self.pending = None;
+        self.last_closed = Some(closed);
         Ok(())
     }
 
@@ -408,15 +458,18 @@ impl Tracker {
             return Ok(());
         }
         let pending = self.pending.clone();
-        self.run(true, |db, log| {
+        let closed = self.run(true, |db, log| {
             log.push(UndoOp::RestorePending(pending));
             record_session(db, log)?;
-            if let Some(o) = &open {
-                close_entry(db, log, o, now)?;
-            }
-            save_session(db, None, false)
+            let closed = match &open {
+                Some(o) => Some(close_entry(db, log, o, now)?),
+                None => None,
+            };
+            save_session(db, None, false)?;
+            Ok(closed)
         })?;
         self.pending = None;
+        self.last_closed = closed;
         Ok(())
     }
 
@@ -505,7 +558,8 @@ impl Tracker {
             let back = a.end.min(now).max(a.start);
             let (s, _) = record_session(db, log)?;
             let mut s = running_session(s, &open);
-            s.accum_ms += close_entry(db, log, &open, a.start)?;
+            let closed = close_entry(db, log, &open, a.start)?;
+            s.accum_ms += closed.end - closed.start;
             if let AbsenceResolution::MoveTo(pid) = res {
                 if back > a.start {
                     insert_entry(db, log, pid, a.start, Some(back))?;
@@ -547,6 +601,7 @@ impl Tracker {
         self.pending = pending;
         self.undo = None;
         self.notice = None;
+        self.last_closed = None;
         Ok(true)
     }
 
@@ -639,6 +694,7 @@ impl Tracker {
                 project_id: project_id.unwrap_or(old.project_id),
                 start: start.unwrap_or(old.start),
                 end: end.or(old.end),
+                note: old.note.clone(),
             };
             if project_id.is_some() {
                 project(db, new.project_id)?;
@@ -684,6 +740,21 @@ impl Tracker {
             self.pending = None;
         }
         Ok(())
+    }
+
+    /// Sets the note of an entry: trimmed, blank means none, at most `MAX_NOTE_CHARS`.
+    /// Not undoable, and keeps the previous undo (e.g. the stop that prompted the note).
+    pub fn set_entry_note(&mut self, id: i64, note: Option<String>) -> Result<Entry> {
+        let note = note.map(|n| n.trim().to_string()).filter(|n| !n.is_empty());
+        if note.as_ref().is_some_and(|n| n.chars().count() > MAX_NOTE_CHARS) {
+            return Err(TrackerError::NoteTooLong);
+        }
+        self.run(UndoMode::Keep, |db, _| {
+            if !repo::set_entry_note(db, id, note.as_deref())? {
+                return Err(TrackerError::NotFound);
+            }
+            repo::get_entry(db, id)?.ok_or(TrackerError::NotFound)
+        })
     }
 
     pub fn unmark_lunch(&mut self, day: NaiveDate) -> Result<()> {
@@ -759,6 +830,7 @@ impl Tracker {
             pending_absence: self.pending.clone(),
             can_undo: self.undo.is_some(),
             notice: self.notice.clone(),
+            last_closed_entry: self.last_closed,
         })
     }
 

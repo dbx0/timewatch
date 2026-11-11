@@ -27,6 +27,7 @@ export function snapshot(over: Partial<TrackerSnapshot> = {}): TrackerSnapshot {
     pendingAbsence: null,
     canUndo: false,
     notice: null,
+    lastClosedEntry: null,
     ...over,
   };
 }

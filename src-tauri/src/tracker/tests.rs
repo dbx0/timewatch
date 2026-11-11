@@ -30,7 +30,7 @@ fn all_entries(tr: &Tracker) -> Vec<Entry> {
 }
 
 fn e(id: i64, pid: i64, start: Ms, end: Option<Ms>) -> Entry {
-    Entry { id, project_id: pid, start, end }
+    Entry { id, project_id: pid, start, end, note: None }
 }
 
 fn snap(tr: &Tracker, now: Ms) -> TrackerSnapshot {
@@ -657,4 +657,93 @@ fn user_settings_never_change_onboarded() {
     edit.onboarded = true;
     tr.set_user_settings(edit).unwrap();
     assert!(!tr.settings().unwrap().onboarded);
+}
+
+// ---- notes and the last closed block ----
+
+#[test]
+fn pause_and_stop_report_the_closed_block() {
+    let (mut tr, a, b) = setup();
+    tr.switch_to(a.id, t(9, 0)).unwrap();
+    assert_eq!(snap(&tr, t(9, 1)).last_closed_entry, None);
+    tr.pause(t(10, 0)).unwrap();
+    let first = all_entries(&tr)[0].id;
+    let c = snap(&tr, t(10, 0)).last_closed_entry.unwrap();
+    assert_eq!(tr.last_closed(), Some(c));
+    assert_eq!(c, ClosedEntry { id: first, project_id: a.id, start: t(9, 0), end: t(10, 0) });
+    // pausing again (already paused) closes nothing
+    tr.pause(t(10, 5)).unwrap();
+    tr.resume(t(10, 10)).unwrap();
+    assert_eq!(snap(&tr, t(10, 10)).last_closed_entry, None);
+    tr.stop(t(11, 0)).unwrap();
+    let c = snap(&tr, t(11, 0)).last_closed_entry.unwrap();
+    assert_eq!((c.project_id, c.start, c.end), (a.id, t(10, 10), t(11, 0)));
+    // switching projects does not offer a note
+    tr.switch_to(a.id, t(12, 0)).unwrap();
+    tr.switch_to(b.id, t(12, 30)).unwrap();
+    assert_eq!(snap(&tr, t(12, 30)).last_closed_entry, None);
+    // stop from paused closes nothing new
+    tr.pause(t(13, 0)).unwrap();
+    tr.stop(t(13, 5)).unwrap();
+    assert_eq!(snap(&tr, t(13, 5)).last_closed_entry, None);
+}
+
+#[test]
+fn undo_clears_the_last_closed_block() {
+    let (mut tr, a, _) = setup();
+    tr.switch_to(a.id, t(9, 0)).unwrap();
+    tr.stop(t(10, 0)).unwrap();
+    assert!(tr.undo(t(10, 1)).unwrap());
+    assert_eq!(snap(&tr, t(10, 1)).last_closed_entry, None);
+}
+
+#[test]
+fn set_entry_note_trims_clears_and_validates() {
+    let (mut tr, a, _) = setup();
+    let en = tr.add_entry(a.id, t(9, 0), t(10, 0), t(12, 0)).unwrap();
+    let got = tr.set_entry_note(en.id, Some("  revisei o PR \n".into())).unwrap();
+    assert_eq!(got.note.as_deref(), Some("revisei o PR"));
+    assert_eq!(all_entries(&tr)[0].note.as_deref(), Some("revisei o PR"));
+    assert_eq!(tr.set_entry_note(en.id, Some("   ".into())).unwrap().note, None);
+    tr.set_entry_note(en.id, Some("x".into())).unwrap();
+    assert_eq!(tr.set_entry_note(en.id, None).unwrap().note, None);
+    // 500 chars (not bytes) is the limit
+    let ok = "é".repeat(500);
+    assert_eq!(tr.set_entry_note(en.id, Some(ok.clone())).unwrap().note, Some(ok));
+    assert!(matches!(tr.set_entry_note(en.id, Some("a".repeat(501))), Err(TrackerError::NoteTooLong)));
+    assert!(matches!(tr.set_entry_note(999, Some("x".into())), Err(TrackerError::NotFound)));
+}
+
+#[test]
+fn saving_a_note_keeps_the_previous_undo() {
+    let (mut tr, a, _) = setup();
+    tr.switch_to(a.id, t(9, 0)).unwrap();
+    tr.stop(t(10, 0)).unwrap();
+    let id = snap(&tr, t(10, 0)).last_closed_entry.unwrap().id;
+    tr.set_entry_note(id, Some("planejamento".into())).unwrap();
+    assert!(snap(&tr, t(10, 0)).can_undo);
+    // undo of the stop reopens the block and keeps its note
+    assert!(tr.undo(t(10, 1)).unwrap());
+    let es = all_entries(&tr);
+    assert_eq!((es[0].end, es[0].note.as_deref()), (None, Some("planejamento")));
+    assert_eq!(snap(&tr, t(10, 1)).status, ClockStatus::Running);
+}
+
+#[test]
+fn notes_reach_day_segments() {
+    let (mut tr, a, _) = setup();
+    let en = tr.add_entry(a.id, t(9, 0), t(10, 0), t(12, 0)).unwrap();
+    tr.set_entry_note(en.id, Some("daily".into())).unwrap();
+    let d = tr.day_calc(&tz(), day(), t(12, 0)).unwrap();
+    assert_eq!(d.segments[0].note.as_deref(), Some("daily"));
+}
+
+#[test]
+fn closed_entry_serde_shape() {
+    use serde_json::{json, to_value};
+    let c = ClosedEntry { id: 1, project_id: 2, start: 3, end: 4 };
+    assert_eq!(to_value(c).unwrap(), json!({"id": 1, "projectId": 2, "start": 3, "end": 4}));
+    let (tr, _, _) = setup();
+    let v = to_value(snap(&tr, t(9, 0))).unwrap();
+    assert!(v.get("lastClosedEntry").is_some_and(|x| x.is_null()));
 }

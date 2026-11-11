@@ -104,6 +104,7 @@ pub fn run() {
             commands::add_entry,
             commands::update_entry,
             commands::delete_entry,
+            commands::set_entry_note,
             commands::unmark_lunch,
             commands::get_settings,
             commands::set_settings,

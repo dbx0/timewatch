@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
   AbsenceResolution,
+  ClosedEntry,
   DayDto,
   Entry,
   EntryPatch,
@@ -20,9 +21,10 @@ import type {
 
 export const getSnapshot = () => invoke<TrackerSnapshot>("get_snapshot");
 export const switchProject = (projectId: number) => invoke<void>("switch_project", { projectId });
-export const pauseClock = () => invoke<void>("pause_clock");
+/** Resolves to the block it closed (null when nothing closed). */
+export const pauseClock = () => invoke<ClosedEntry | null>("pause_clock");
 export const resumeClock = () => invoke<void>("resume_clock");
-export const stopClock = () => invoke<void>("stop_clock");
+export const stopClock = () => invoke<ClosedEntry | null>("stop_clock");
 export const resolveAbsence = (resolution: AbsenceResolution) =>
   invoke<void>("resolve_absence", { resolution });
 export const undo = () => invoke<boolean>("undo");
@@ -44,6 +46,9 @@ export const updateEntry = (id: number, patch: EntryPatch) =>
     projectId: patch.projectId ?? null,
   });
 export const deleteEntry = (id: number) => invoke<void>("delete_entry", { id });
+/** Blank clears the note; the backend trims and caps at `MAX_NOTE_CHARS`. */
+export const setEntryNote = (id: number, note: string | null) =>
+  invoke<Entry>("set_entry_note", { id, note: note?.trim() ? note : null });
 export const unmarkLunch = (day: IsoDate) => invoke<void>("unmark_lunch", { day });
 
 export const getSettings = () => invoke<Settings>("get_settings");

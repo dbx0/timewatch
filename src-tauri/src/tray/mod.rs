@@ -182,6 +182,7 @@ mod tests {
             pending_absence: None,
             can_undo: false,
             notice: None,
+            last_closed_entry: None,
         }
     }
 
