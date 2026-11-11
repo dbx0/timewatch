@@ -1,0 +1,63 @@
+import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import type {
+  AbsenceResolution,
+  DayDto,
+  Entry,
+  EntryPatch,
+  ExportFormat,
+  Grouping,
+  IsoDate,
+  Ms,
+  Project,
+  Settings,
+  TrackerSnapshot,
+  WeekReport,
+  WindowKind,
+} from "./types";
+
+export const getSnapshot = () => invoke<TrackerSnapshot>("get_snapshot");
+export const switchProject = (projectId: number) => invoke<void>("switch_project", { projectId });
+export const pauseClock = () => invoke<void>("pause_clock");
+export const resumeClock = () => invoke<void>("resume_clock");
+export const stopClock = () => invoke<void>("stop_clock");
+export const resolveAbsence = (resolution: AbsenceResolution) =>
+  invoke<void>("resolve_absence", { resolution });
+export const undo = () => invoke<boolean>("undo");
+
+export const createProject = (name: string, client: string, color: string) =>
+  invoke<Project>("create_project", { name, client, color });
+export const updateProject = (project: Project) => invoke<void>("update_project", { project });
+
+export const getWeek = (weekStart: IsoDate, grouping: Grouping) =>
+  invoke<WeekReport>("get_week", { weekStart, grouping });
+export const getDay = (day: IsoDate) => invoke<DayDto>("get_day", { day });
+export const addEntry = (projectId: number, start: Ms, end: Ms) =>
+  invoke<Entry>("add_entry", { projectId, start, end });
+export const updateEntry = (id: number, patch: EntryPatch) =>
+  invoke<Entry>("update_entry", {
+    id,
+    start: patch.start ?? null,
+    end: patch.end ?? null,
+    projectId: patch.projectId ?? null,
+  });
+export const deleteEntry = (id: number) => invoke<void>("delete_entry", { id });
+export const unmarkLunch = (day: IsoDate) => invoke<void>("unmark_lunch", { day });
+
+export const getSettings = () => invoke<Settings>("get_settings");
+export const setSettings = (settings: Settings) => invoke<void>("set_settings", { settings });
+
+export const exportWeek = (
+  weekStart: IsoDate,
+  grouping: Grouping,
+  format: ExportFormat,
+  detailed: boolean,
+  path: string,
+) => invoke<void>("export_week", { weekStart, grouping, format, detailed, path });
+
+export const openWindow = (kind: WindowKind) => invoke<void>("open_window", { kind });
+
+export const onChanged = (cb: (snapshot: TrackerSnapshot) => void): Promise<UnlistenFn> =>
+  listen<TrackerSnapshot>("tracker://changed", (e) => cb(e.payload));
+export const onTick = (cb: (now: Ms) => void): Promise<UnlistenFn> =>
+  listen<{ now: Ms }>("tracker://tick", (e) => cb(e.payload.now));
