@@ -1,4 +1,4 @@
-import { atLocal } from "../../lib/dates";
+import { addDays, atLocal } from "../../lib/dates";
 import { dur, hm } from "../../lib/format";
 import { ptBR } from "../../i18n/pt-BR";
 import type { IsoDate, Project, Seg } from "../../lib/types";
@@ -19,16 +19,28 @@ export function EntryRow({ day, seg, projects, onUpdate, onDelete }: Props) {
   const options: DropdownOption<number>[] = projects
     .filter((p) => !p.archived || p.id === seg.projectId)
     .map((p) => ({ value: p.id, label: p.name, color: p.color, group: p.client }));
+  const clippedStart = seg.start === atLocal(day, "00:00");
+  const clippedEnd = !seg.running && seg.end === atLocal(addDays(day, 1), "00:00");
+  const change = (field: "start" | "end", current: string) => (v: string) => {
+    if (v === current) return;
+    onUpdate(seg.entryId, { [field]: atLocal(day, v) });
+  };
   const proj = projects.find((p) => p.id === seg.projectId);
 
   return (
     <div className="group flex items-center gap-2.5 rounded-[10px] px-1.5 py-2 hover:bg-[#17171d]">
-      <TimePicker value={hm(seg.start)} onChange={(v) => onUpdate(seg.entryId, { start: atLocal(day, v) })} />
+      {clippedStart ? (
+        <span className="text-xs text-dim">{t.continuesFromPrev}</span>
+      ) : (
+        <TimePicker value={hm(seg.start)} onChange={change("start", hm(seg.start))} />
+      )}
       <span className="text-dim">→</span>
-      {seg.running ? (
+      {clippedEnd ? (
+        <span className="text-xs text-dim">{t.continuesNext}</span>
+      ) : seg.running ? (
         <span className="rounded-full bg-accent/20 px-2.5 py-1 text-xs font-semibold text-accent2">{t.now}</span>
       ) : (
-        <TimePicker value={hm(seg.end)} onChange={(v) => onUpdate(seg.entryId, { end: atLocal(day, v) })} />
+        <TimePicker value={hm(seg.end)} onChange={change("end", hm(seg.end))} />
       )}
       <Dropdown
         className="ml-1.5"

@@ -237,6 +237,38 @@ describe("DayView", () => {
     expect(screen.getByText(/Almoço ainda não marcado/)).toBeTruthy();
   });
 
+  it("makes midnight-clipped edges non-editable", async () => {
+    const a = atLocal("2026-11-11", "00:00");
+    const b = atLocal("2026-11-12", "00:00");
+    await openDay({
+      segments: [
+        { entryId: 8, projectId: 2, start: a, end: atLocal("2026-11-11", "02:00"), running: false },
+        { entryId: 9, projectId: 2, start: atLocal("2026-11-11", "22:00"), end: b, running: false },
+      ],
+    });
+    expect(screen.getByText("continua do dia anterior")).toBeTruthy();
+    expect(screen.getByText("continua no dia seguinte")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "00:00" })).toBeNull();
+    expect(api.updateEntry).not.toHaveBeenCalled();
+  });
+
+  it("does not update when the picked time is unchanged", async () => {
+    await openDay({ segments: [seg(7, "09:00", "12:00")] });
+    fireEvent.click(screen.getByRole("button", { name: "12:00" }));
+    fireEvent.click(screen.getByRole("button", { name: "OK" }));
+    await flush();
+    expect(api.updateEntry).not.toHaveBeenCalled();
+  });
+
+  it("hides the old day's rows while the next day loads", async () => {
+    await openDay({ segments: [seg(7, "09:00", "12:00")] });
+    expect(screen.getByRole("button", { name: "12:00" })).toBeTruthy();
+    vi.mocked(api.getDay).mockReturnValue(new Promise(() => {}));
+    fireEvent.click(screen.getByRole("button", { name: "Próximo dia" }));
+    await flush();
+    expect(screen.queryByRole("button", { name: "12:00" })).toBeNull();
+  });
+
   it("shows holiday in the jornada card", async () => {
     await openDay({ isHoliday: true });
     expect(screen.getByText("Jornada (feriado)")).toBeTruthy();

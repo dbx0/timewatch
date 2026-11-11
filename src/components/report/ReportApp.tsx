@@ -56,6 +56,7 @@ export function ReportApp() {
         />
       ) : (
         <DayView
+          key={view.day}
           day={view.day}
           today={today}
           now={now}

@@ -100,6 +100,8 @@ export const ptBR = {
     addEntry: "+ Adicionar registro",
     noProject: "Crie um projeto antes de adicionar registros",
     now: "agora",
+    continuesFromPrev: "continua do dia anterior",
+    continuesNext: "continua no dia seguinte",
     delete: "Apagar registro",
     deleted: "Registro apagado",
     lunch: "Almoço",
