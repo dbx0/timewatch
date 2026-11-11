@@ -2,8 +2,32 @@
 
 :root {
   color-scheme: dark;
+  --bg: #0c0d11;
+  --panel: #0a0a0c;
+  --win: #131318;
+  --raise: #1b1b21;
+  --raise2: #23232b;
+  --line: #2a2a33;
+  --text: #ececf1;
+  --mute: #8a8a96;
+  --dim: #5d5d68;
   --accent: #4f86ff;
+  --accent2: #a8c4ff;
   --accent-light: #a8c4ff;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-panel: var(--panel);
+  --color-win: var(--win);
+  --color-raise: var(--raise);
+  --color-raise2: var(--raise2);
+  --color-line: var(--line);
+  --color-text: var(--text);
+  --color-mute: var(--mute);
+  --color-dim: var(--dim);
+  --color-accent: var(--accent);
+  --color-accent2: var(--accent2);
 }
 
 html,
@@ -11,8 +35,8 @@ body,
 #root {
   height: 100%;
   margin: 0;
-  background: #0b0b0e;
-  color: #fff;
+  background: var(--bg);
+  color: var(--text);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
