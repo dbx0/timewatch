@@ -11,16 +11,17 @@ use tauri_plugin_autostart::ManagerExt as _;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
 
 use crate::commands::{now_ms, AppState};
+use crate::i18n::{fill, Lang};
 use crate::tracker::{ClockStatus, TrackerSnapshot};
 use crate::window::{self, OverlayState};
 
 const TRAY_ID: &str = "main";
 
-/// Menu-bar title: `H:MM` while running, `pausado` while paused, nothing when idle.
-pub fn tray_title(s: &TrackerSnapshot) -> Option<String> {
+/// Menu-bar title: `H:MM` while running, `pausado` (in `lang`) while paused, nothing when idle.
+pub fn tray_title(s: &TrackerSnapshot, lang: Lang) -> Option<String> {
     match s.status {
         ClockStatus::Running => Some(format_hm(s.session_ms)),
-        ClockStatus::Paused => Some("pausado".to_string()),
+        ClockStatus::Paused => Some(lang.strings().tray_paused.to_string()),
         ClockStatus::Idle => None,
     }
 }
@@ -32,8 +33,8 @@ fn format_hm(ms: i64) -> String {
 
 
 /// Tooltip (Windows): `Timewatch · <projeto> · H:MM`; plain `Timewatch` when idle.
-pub fn tray_tooltip(s: &TrackerSnapshot) -> String {
-    match (tray_title(s), &s.session_project) {
+pub fn tray_tooltip(s: &TrackerSnapshot, lang: Lang) -> String {
+    match (tray_title(s, lang), &s.session_project) {
         (Some(t), Some(p)) => format!("Timewatch \u{b7} {} \u{b7} {t}", p.name),
         (Some(t), None) => format!("Timewatch \u{b7} {t}"),
         (None, _) => "Timewatch".to_string(),
@@ -44,9 +45,9 @@ pub fn tray_tooltip(s: &TrackerSnapshot) -> String {
 static LAST_TRAY: Mutex<Option<(Option<String>, String)>> = Mutex::new(None);
 
 /// Pushes the title (macOS) / tooltip to the tray icon. Call without holding the AppState lock.
-pub fn update_tray(app: &AppHandle, s: &TrackerSnapshot) {
+pub fn update_tray(app: &AppHandle, s: &TrackerSnapshot, lang: Lang) {
     let Some(tray) = app.tray_by_id(TRAY_ID) else { return };
-    let cur = (tray_title(s), tray_tooltip(s));
+    let cur = (tray_title(s, lang), tray_tooltip(s, lang));
     let mut last = LAST_TRAY.lock().unwrap_or_else(|p| p.into_inner());
     if last.as_ref() == Some(&cur) {
         return;
@@ -60,9 +61,12 @@ pub fn update_tray(app: &AppHandle, s: &TrackerSnapshot) {
 /// Refreshes the tray from the current tracker state (builds the snapshot, then releases the lock).
 pub fn refresh_tray(app: &AppHandle) {
     let Some(state) = app.try_state::<AppState>() else { return };
-    let snap = state.lock().snapshot(&Local, now_ms());
+    let (snap, lang) = {
+        let t = state.lock();
+        (t.snapshot(&Local, now_ms()), t.lang())
+    };
     if let Ok(snap) = snap {
-        update_tray(app, &snap);
+        update_tray(app, &snap, lang);
     }
 }
 
@@ -76,12 +80,31 @@ fn toggle_overlay(app: &AppHandle) {
     }
 }
 
-pub fn setup_tray(app: &AppHandle) -> tauri::Result<TrayIcon> {
-    let open = MenuItem::with_id(app, "open", "Abrir", true, None::<&str>)?;
-    let week = MenuItem::with_id(app, "week", "Ver semana", true, None::<&str>)?;
-    let settings = MenuItem::with_id(app, "settings", "Configura\u{e7}\u{f5}es", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", "Sair", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&open, &week, &settings, &PredefinedMenuItem::separator(app)?, &quit])?;
+/// Tray menu labels: open, week, settings, quit.
+pub fn menu_labels(lang: Lang) -> [&'static str; 4] {
+    let t = lang.strings();
+    [t.tray_open, t.tray_week, t.tray_settings, t.tray_quit]
+}
+
+fn build_menu(app: &AppHandle, lang: Lang) -> tauri::Result<Menu<tauri::Wry>> {
+    let [open, week, settings, quit] = menu_labels(lang);
+    let open = MenuItem::with_id(app, "open", open, true, None::<&str>)?;
+    let week = MenuItem::with_id(app, "week", week, true, None::<&str>)?;
+    let settings = MenuItem::with_id(app, "settings", settings, true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", quit, true, None::<&str>)?;
+    Menu::with_items(app, &[&open, &week, &settings, &PredefinedMenuItem::separator(app)?, &quit])
+}
+
+/// Rebuilds the tray menu in `lang` and refreshes the title (the paused label is translated).
+pub fn set_language(app: &AppHandle, lang: Lang) {
+    if let (Some(tray), Ok(menu)) = (app.tray_by_id(TRAY_ID), build_menu(app, lang)) {
+        let _ = tray.set_menu(Some(menu));
+    }
+    refresh_tray(app);
+}
+
+pub fn setup_tray(app: &AppHandle, lang: Lang) -> tauri::Result<TrayIcon> {
+    let menu = build_menu(app, lang)?;
     let icon = Image::from_bytes(include_bytes!("../../icons/tray/tray.png"))?;
     let tray = TrayIconBuilder::with_id(TRAY_ID)
         .icon(icon)
@@ -114,18 +137,18 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<TrayIcon> {
 }
 
 /// Parses `"Alt+Space"`-style strings.
-pub fn parse_shortcut(s: &str) -> Result<Shortcut, String> {
-    s.parse::<Shortcut>().map_err(|e| format!("Atalho inv\u{e1}lido \"{s}\": {e}"))
+pub fn parse_shortcut(s: &str, lang: Lang) -> Result<Shortcut, String> {
+    s.parse::<Shortcut>().map_err(|e| fill(lang.strings().err_invalid_shortcut, &[s, &e.to_string()]))
 }
 
 /// Makes `new` the global shortcut. `old` stays registered if `new` is invalid or unavailable.
-pub fn apply_shortcut(app: &AppHandle, old: Option<&str>, new: &str) -> Result<(), String> {
-    let new_sc = parse_shortcut(new)?;
-    let old_sc = old.and_then(|o| parse_shortcut(o).ok());
+pub fn apply_shortcut(app: &AppHandle, old: Option<&str>, new: &str, lang: Lang) -> Result<(), String> {
+    let new_sc = parse_shortcut(new, lang)?;
+    let old_sc = old.and_then(|o| parse_shortcut(o, lang).ok());
     if old_sc.as_ref() == Some(&new_sc) && app.global_shortcut().is_registered(new_sc) {
         return Ok(());
     }
-    app.global_shortcut().register(new_sc).map_err(|e| format!("N\u{e3}o foi poss\u{ed}vel registrar o atalho \"{new}\": {e}"))?;
+    app.global_shortcut().register(new_sc).map_err(|e| fill(lang.strings().err_register_shortcut, &[new, &e.to_string()]))?;
     if let Some(o) = old_sc.filter(|o| *o != new_sc) {
         let _ = app.global_shortcut().unregister(o);
     }
@@ -154,8 +177,13 @@ pub fn apply_autostart(app: &AppHandle, enabled: bool) -> Result<(), String> {
 
 /// Startup: register the stored shortcut and sync autostart (failures are logged, not fatal).
 pub fn apply_startup(app: &AppHandle) {
-    let Some(settings) = app.try_state::<AppState>().and_then(|s| s.lock().settings().ok()) else { return };
-    match apply_shortcut(app, None, &settings.shortcut) {
+    let Some((settings, lang)) = app.try_state::<AppState>().and_then(|s| {
+        let t = s.lock();
+        t.settings().ok().map(|st| (st, t.lang()))
+    }) else {
+        return;
+    };
+    match apply_shortcut(app, None, &settings.shortcut, lang) {
         Ok(()) => eprintln!("[tray] global shortcut registered: {}", settings.shortcut),
         Err(e) => eprintln!("[tray] {e}"),
     }
@@ -196,9 +224,23 @@ mod tests {
 
     #[test]
     fn tray_title_states() {
-        assert_eq!(tray_title(&snap(ClockStatus::Running, 65 * 60_000)), Some("1:05".into()));
-        assert_eq!(tray_title(&snap(ClockStatus::Running, 59_000)), Some("0:00".into()));
-        assert_eq!(tray_title(&snap(ClockStatus::Paused, 65 * 60_000)), Some("pausado".into()));
-        assert_eq!(tray_title(&snap(ClockStatus::Idle, 0)), None);
+        let p = Lang::PtBr;
+        assert_eq!(tray_title(&snap(ClockStatus::Running, 65 * 60_000), p), Some("1:05".into()));
+        assert_eq!(tray_title(&snap(ClockStatus::Running, 59_000), p), Some("0:00".into()));
+        assert_eq!(tray_title(&snap(ClockStatus::Paused, 65 * 60_000), p), Some("pausado".into()));
+        assert_eq!(tray_title(&snap(ClockStatus::Idle, 0), p), None);
+    }
+
+    #[test]
+    fn tray_title_paused_per_language() {
+        assert_eq!(tray_title(&snap(ClockStatus::Paused, 0), Lang::En), Some("paused".into()));
+        assert_eq!(tray_title(&snap(ClockStatus::Paused, 0), Lang::Es), Some("en pausa".into()));
+    }
+
+    #[test]
+    fn menu_labels_per_language() {
+        assert_eq!(menu_labels(Lang::PtBr), ["Abrir", "Ver semana", "Configurações", "Sair"]);
+        assert_eq!(menu_labels(Lang::En), ["Open", "View week", "Settings", "Quit"]);
+        assert_eq!(menu_labels(Lang::Es), ["Abrir", "Ver semana", "Configuración", "Salir"]);
     }
 }

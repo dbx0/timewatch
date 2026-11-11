@@ -1,6 +1,8 @@
 use chrono::{Datelike, NaiveDate, NaiveTime};
 use serde::{Deserialize, Serialize};
 
+use crate::i18n::LanguagePref;
+
 /// UTC epoch milliseconds.
 pub type Ms = i64;
 
@@ -51,6 +53,9 @@ pub struct Settings {
     pub shortcut: String,
     pub overlay_monitor: Option<String>,
     pub onboarded: bool,
+    /// UI language; `system` follows the OS locale. Missing in data saved before it existed.
+    #[serde(default)]
+    pub language: LanguagePref,
 }
 
 impl Default for Settings {
@@ -67,6 +72,7 @@ impl Default for Settings {
             shortcut: "Alt+Space".to_string(),
             overlay_monitor: None,
             onboarded: false,
+            language: LanguagePref::System,
         }
     }
 }
@@ -100,6 +106,16 @@ mod tests {
         assert_eq!(s.shortcut, "Alt+Space");
         assert_eq!(s.overlay_monitor, None);
         assert!(!s.onboarded);
+        assert_eq!(s.language, crate::i18n::LanguagePref::System);
+    }
+
+    #[test]
+    fn settings_without_language_load_as_system() {
+        let mut v = serde_json::to_value(Settings::default()).unwrap();
+        assert_eq!(v["language"], "system");
+        v.as_object_mut().unwrap().remove("language");
+        let s: Settings = serde_json::from_value(v).unwrap();
+        assert_eq!(s.language, crate::i18n::LanguagePref::System);
     }
 
     #[test]

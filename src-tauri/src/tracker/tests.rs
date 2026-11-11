@@ -747,3 +747,73 @@ fn closed_entry_serde_shape() {
     let v = to_value(snap(&tr, t(9, 0))).unwrap();
     assert!(v.get("lastClosedEntry").is_some_and(|x| x.is_null()));
 }
+
+// ---- language ----
+
+fn with_language(tr: &mut Tracker, l: crate::i18n::LanguagePref) {
+    let mut st = tr.settings().unwrap();
+    st.language = l;
+    tr.set_settings(st).unwrap();
+}
+
+#[test]
+fn lang_follows_settings_then_system() {
+    use crate::i18n::{Lang, LanguagePref};
+    let (mut tr, _, _) = setup();
+    assert_eq!(tr.lang(), Lang::PtBr, "tests default to pt-BR as the system language");
+    tr.set_system_lang(Lang::Es);
+    assert_eq!(tr.lang(), Lang::Es);
+    with_language(&mut tr, LanguagePref::En);
+    assert_eq!(tr.lang(), Lang::En);
+    with_language(&mut tr, LanguagePref::System);
+    assert_eq!(tr.lang(), Lang::Es);
+}
+
+#[test]
+fn error_messages_per_language() {
+    use crate::i18n::Lang;
+    let cases = [
+        (TrackerError::Overlap, ["Esse horário sobrepõe outro registro", "This time overlaps another record", "Este horario se superpone con otro registro"]),
+        (TrackerError::NotFound, ["Registro não encontrado", "Record not found", "Registro no encontrado"]),
+        (TrackerError::InvalidRange, ["O início precisa ser antes do fim", "Start has to be before end", "El inicio tiene que ser antes del fin"]),
+        (TrackerError::FutureEnd, ["O registro não pode terminar no futuro", "A record can't end in the future", "El registro no puede terminar en el futuro"]),
+        (TrackerError::NoSession, ["Nenhuma sessão ativa", "No active session", "No hay ninguna sesión activa"]),
+        (TrackerError::NoteTooLong, ["A nota pode ter no máximo 500 caracteres", "Notes can have at most 500 characters", "La nota puede tener como máximo 500 caracteres"]),
+    ];
+    for (err, [pt, en, es]) in cases {
+        assert_eq!(err.message(Lang::PtBr), pt);
+        assert_eq!(err.message(Lang::En), en);
+        assert_eq!(err.message(Lang::Es), es);
+        assert_eq!(err.to_string(), pt, "Display stays pt-BR");
+    }
+    let store = TrackerError::from(rusqlite::Error::InvalidQuery);
+    assert!(store.message(Lang::En).starts_with("Couldn't access the data: "));
+    assert!(store.message(Lang::PtBr).starts_with("Erro ao acessar os dados: "));
+}
+
+#[test]
+fn notices_render_in_the_current_language() {
+    use crate::i18n::{Lang, LanguagePref};
+    let (mut tr, a, _) = setup();
+    tr.switch_to(a.id, t(9, 0)).unwrap();
+    tr.heartbeat(t(10, 0)).unwrap();
+    let mut tr = Tracker::new(tr.db);
+    tr.set_system_lang(Lang::En);
+    tr.reconcile_on_startup(&tz(), t(10, 3)).unwrap();
+    assert_eq!(snap(&tr, t(10, 3)).notice.as_deref(), Some("The clock was stopped at 10:00, when the app closed"));
+    // Switching language re-renders the pending notice (set_settings does not clear it).
+    with_language(&mut tr, LanguagePref::Es);
+    assert_eq!(snap(&tr, t(10, 3)).notice.as_deref(), Some("El reloj se detuvo a las 10:00, cuando la app se cerró"));
+
+    let (mut tr, a, _) = setup();
+    let mut st = tr.settings().unwrap();
+    st.stop_on_sleep = true;
+    st.language = LanguagePref::En;
+    tr.set_settings(st).unwrap();
+    tr.switch_to(a.id, t(9, 0)).unwrap();
+    tr.begin_absence(&tz(), t(12, 5), t(13, 10), AbsenceReason::Sleep).unwrap();
+    assert_eq!(
+        snap(&tr, t(13, 10)).notice.as_deref(),
+        Some("The clock was stopped at 12:05, when the computer went to sleep")
+    );
+}

@@ -72,6 +72,7 @@ pub fn run() {
             std::fs::create_dir_all(&dir)?;
             let db = Db::open(&dir.join("timewatch.sqlite3"))?;
             let mut tracker = Tracker::new(db);
+            tracker.set_system_lang(i18n::system_lang());
             tracker.reconcile_on_startup(&Local, now_ms())?;
             app.manage(AppState::new(tracker));
             start_ticker(app.handle().clone());
@@ -81,10 +82,12 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
             window::create_overlay(app.handle())?;
-            if !app.state::<AppState>().lock().settings()?.onboarded {
+            let onboarded = app.state::<AppState>().lock().settings()?.onboarded;
+            if !onboarded {
                 window::create_or_focus(app.handle(), "onboarding")?;
             }
-            tray::setup_tray(app.handle())?;
+            let lang = app.state::<AppState>().lock().lang();
+            tray::setup_tray(app.handle(), lang)?;
             tray::refresh_tray(app.handle());
             tray::apply_startup(app.handle());
             Ok(())
@@ -107,6 +110,7 @@ pub fn run() {
             commands::set_entry_note,
             commands::unmark_lunch,
             commands::get_settings,
+            commands::get_language,
             commands::set_settings,
             commands::export_week,
             commands::open_window,

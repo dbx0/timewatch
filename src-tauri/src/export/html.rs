@@ -2,7 +2,7 @@ use chrono::TimeZone;
 
 use crate::domain::calc::{Cell, DayCalc, RowKind, WeekReport};
 use crate::domain::Project;
-use crate::i18n as t;
+use crate::i18n::Lang;
 
 use super::csv::hhmm;
 use super::fmt_hours;
@@ -36,16 +36,17 @@ tr.total td{font-weight:600;border-top:2px solid #1a1d24}\
 .muted{color:#5a6070}td.note{text-align:left;white-space:pre-wrap;color:#3a4050}\
 @media print{body{margin:0;max-width:none;padding:0}.card,tr{break-inside:avoid}h2{break-after:avoid}}";
 
-fn cell(c: &Cell) -> String {
+fn cell(c: &Cell, lang: Lang) -> String {
+    let t = lang.strings();
     if c.total_ms == 0 {
         return "<td></td>".into();
     }
     let extra = if c.extra_ms > 0 {
-        format!("<span class=\"extra\">+{} {}</span>", fmt_hours(c.extra_ms), t::EXTRA_SUFFIX)
+        format!("<span class=\"extra\">+{} {}</span>", fmt_hours(c.extra_ms, lang), t.extra_suffix)
     } else {
         String::new()
     };
-    format!("<td>{}{}</td>", fmt_hours(c.total_ms), extra)
+    format!("<td>{}{}</td>", fmt_hours(c.total_ms, lang), extra)
 }
 
 fn color_ok(c: &str) -> bool {
@@ -56,41 +57,43 @@ pub fn html_report<Tz: TimeZone>(
     report: &WeekReport,
     detailed: Option<(&[DayCalc], &[Project])>,
     tz: &Tz,
+    lang: Lang,
 ) -> String {
-    let fmt_d = |d: chrono::NaiveDate| d.format("%d/%m/%Y").to_string();
+    let t = lang.strings();
+    let fmt_d = |d: chrono::NaiveDate| d.format(t.date_fmt).to_string();
     let mut h = String::new();
-    h.push_str("<!DOCTYPE html>\n<html lang=\"pt-BR\"><head><meta charset=\"utf-8\">");
+    h.push_str(&format!("<!DOCTYPE html>\n<html lang=\"{}\"><head><meta charset=\"utf-8\">", lang.code()));
     h.push_str("<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">");
-    h.push_str(&format!("<title>{}</title><style>{CSS}</style></head><body>", esc(t::EXPORT_TITLE)));
-    h.push_str(&format!("<h1>{}</h1>", esc(t::EXPORT_TITLE)));
+    h.push_str(&format!("<title>{}</title><style>{CSS}</style></head><body>", esc(t.export_title)));
+    h.push_str(&format!("<h1>{}</h1>", esc(t.export_title)));
     h.push_str(&format!(
         "<p class=\"period\">{} {} {}</p>",
         fmt_d(report.days[0]),
-        t::PERIOD_TO,
+        t.period_to,
         fmt_d(report.days[6])
     ));
     h.push_str("<div class=\"cards\">");
     for (label, ms) in [
-        (t::CARD_TOTAL, report.total.total_ms),
-        (t::CARD_EXPECTED, report.expected_ms),
-        (t::CARD_EXTRA, report.total.extra_ms),
+        (t.card_total, report.total.total_ms),
+        (t.card_expected, report.expected_ms),
+        (t.card_extra, report.total.extra_ms),
     ] {
         h.push_str(&format!(
             "<div class=\"card\"><div class=\"l\">{}</div><div class=\"v\">{}</div></div>",
             esc(label),
-            fmt_hours(ms)
+            fmt_hours(ms, lang)
         ));
     }
     h.push_str("</div><table><thead><tr>");
     let first = match report.grouping {
-        crate::domain::calc::Grouping::Project => t::COL_PROJECT,
-        crate::domain::calc::Grouping::Client => t::COL_CLIENT,
+        crate::domain::calc::Grouping::Project => t.col_project,
+        crate::domain::calc::Grouping::Client => t.col_client,
     };
     h.push_str(&format!("<th>{}</th>", esc(first)));
     for (i, d) in report.days.iter().enumerate() {
-        h.push_str(&format!("<th>{} {}</th>", t::DAY_NAMES[i], d.format("%d/%m")));
+        h.push_str(&format!("<th>{} {}</th>", t.day_names[i], d.format(t.short_date_fmt)));
     }
-    h.push_str(&format!("<th>{}</th></tr></thead><tbody>", esc(t::COL_TOTAL)));
+    h.push_str(&format!("<th>{}</th></tr></thead><tbody>", esc(t.col_total)));
 
     for r in &report.rows {
         if r.kind == RowKind::ClientHeader {
@@ -102,39 +105,39 @@ pub fn html_report<Tz: TimeZone>(
             _ => String::new(),
         };
         let sub = if r.project_count > 1 {
-            format!(" <span class=\"muted\">({} {})</span>", r.project_count, t::PROJECTS_SUFFIX)
+            format!(" <span class=\"muted\">({} {})</span>", r.project_count, t.projects_suffix)
         } else {
             String::new()
         };
         h.push_str(&format!("<tr><td>{dot}{}{sub}</td>", esc(&r.label)));
         for c in &r.cells {
-            h.push_str(&cell(c));
+            h.push_str(&cell(c, lang));
         }
-        h.push_str(&cell(&r.total));
+        h.push_str(&cell(&r.total, lang));
         h.push_str("</tr>");
     }
 
-    h.push_str(&format!("<tr class=\"total\"><td>{}</td>", esc(t::ROW_TOTAL)));
+    h.push_str(&format!("<tr class=\"total\"><td>{}</td>", esc(t.row_total)));
     for c in &report.col_totals {
-        h.push_str(&format!("<td>{}</td>", if c.total_ms == 0 { String::new() } else { fmt_hours(c.total_ms) }));
+        h.push_str(&format!("<td>{}</td>", if c.total_ms == 0 { String::new() } else { fmt_hours(c.total_ms, lang) }));
     }
-    h.push_str(&format!("<td>{}</td></tr>", fmt_hours(report.total.total_ms)));
-    h.push_str(&format!("<tr><td>{}</td>", esc(t::ROW_EXTRA)));
+    h.push_str(&format!("<td>{}</td></tr>", fmt_hours(report.total.total_ms, lang)));
+    h.push_str(&format!("<tr><td>{}</td>", esc(t.row_extra)));
     for c in &report.col_totals {
-        h.push_str(&format!("<td>{}</td>", if c.extra_ms == 0 { String::new() } else { fmt_hours(c.extra_ms) }));
+        h.push_str(&format!("<td>{}</td>", if c.extra_ms == 0 { String::new() } else { fmt_hours(c.extra_ms, lang) }));
     }
-    h.push_str(&format!("<td>{}</td></tr></tbody></table>", fmt_hours(report.total.extra_ms)));
+    h.push_str(&format!("<td>{}</td></tr></tbody></table>", fmt_hours(report.total.extra_ms, lang)));
 
     if let Some((days, projects)) = detailed {
         h.push_str(&format!(
             "<h2>{}</h2><table><thead><tr><th>{}</th><th>{}</th><th>{}</th><th>{}</th><th>{}</th><th>{}</th></tr></thead><tbody>",
-            esc(t::RECORDS_TITLE),
-            esc(t::REC_DATE),
-            esc(&format!("{} / {}", t::COL_CLIENT, t::COL_PROJECT)),
-            esc(t::REC_START),
-            esc(t::REC_END),
-            esc(t::REC_HOURS),
-            esc(t::REC_NOTE),
+            esc(t.records_title),
+            esc(t.rec_date),
+            esc(&format!("{} / {}", t.col_client, t.col_project)),
+            esc(t.rec_start),
+            esc(t.rec_end),
+            esc(t.rec_hours),
+            esc(t.rec_note),
         ));
         for d in days {
             for s in &d.segments {
@@ -144,12 +147,12 @@ pub fn html_report<Tz: TimeZone>(
                     .map_or(("", ""), |p| (p.client.as_str(), p.name.as_str()));
                 h.push_str(&format!(
                     "<tr><td>{}</td><td>{} / {}</td><td>{}</td><td>{}</td><td>{}</td><td class=\"note\">{}</td></tr>",
-                    d.day.format("%d/%m/%Y"),
+                    d.day.format(t.date_fmt),
                     esc(c),
                     esc(n),
                     hhmm(tz, s.start),
                     hhmm(tz, s.end),
-                    fmt_hours(s.end - s.start),
+                    fmt_hours(s.end - s.start, lang),
                     esc(s.note.as_deref().unwrap_or(""))
                 ));
             }
@@ -168,6 +171,7 @@ mod tests {
     use crate::tracker::Tracker;
     use crate::store::db::Db;
     use chrono::{FixedOffset, NaiveDate};
+    use crate::i18n::Lang;
 
     const H: i64 = 3_600_000;
 
@@ -191,7 +195,7 @@ mod tests {
     #[test]
     fn html_escapes_names() {
         let (_tr, r) = report("<script>alert(1)</script>", "A & B");
-        let out = html_report(&r, None, &tz());
+        let out = html_report(&r, None, &tz(), Lang::PtBr);
         assert!(!out.contains("<script>"));
         assert!(out.contains("&lt;script&gt;alert(1)&lt;/script&gt;"));
         assert!(out.contains("A &amp; B"));
@@ -200,7 +204,7 @@ mod tests {
     #[test]
     fn html_contains_totals() {
         let (tr, r) = report("Acme", "Alpha");
-        let out = html_report(&r, None, &tz());
+        let out = html_report(&r, None, &tz(), Lang::PtBr);
         assert!(out.contains("Horas da semana"));
         assert!(out.contains("09/11/2026 a 15/11/2026"));
         assert!(out.contains("<div class=\"v\">5,5</div>"));
@@ -209,7 +213,7 @@ mod tests {
         let now = r.week_start.and_hms_opt(0, 0, 0).unwrap().and_utc().timestamp_millis() + 5 * 24 * H;
         let days: Vec<_> = r.days.iter().map(|d| tr.day_calc(&tz(), *d, now).unwrap()).collect();
         let projects = tr.projects().unwrap();
-        let det = html_report(&r, Some((&days, &projects)), &tz());
+        let det = html_report(&r, Some((&days, &projects)), &tz(), Lang::PtBr);
         assert!(det.contains("Registros"));
         assert!(det.contains("<th>Nota</th>"));
         assert!(det.contains("<td>06:00</td><td>11:30</td><td>5,5</td><td class=\"note\"></td>"));
@@ -223,8 +227,46 @@ mod tests {
         tr.set_entry_note(id, Some("<b>deploy</b> & \"testes\"".into())).unwrap();
         let days: Vec<_> = r.days.iter().map(|d| tr.day_calc(&tz(), *d, now).unwrap()).collect();
         let projects = tr.projects().unwrap();
-        let det = html_report(&r, Some((&days, &projects)), &tz());
+        let det = html_report(&r, Some((&days, &projects)), &tz(), Lang::PtBr);
         assert!(!det.contains("<b>deploy"));
         assert!(det.contains("<td class=\"note\">&lt;b&gt;deploy&lt;/b&gt; &amp; &quot;testes&quot;</td>"));
+    }
+
+    #[test]
+    fn html_pt_br_lang_attribute() {
+        let (_tr, r) = report("Acme", "Alpha");
+        assert!(html_report(&r, None, &tz(), Lang::PtBr).contains("<html lang=\"pt-BR\">"));
+    }
+
+    #[test]
+    fn html_in_english() {
+        let (tr, r) = report("Acme", "Alpha");
+        let out = html_report(&r, None, &tz(), Lang::En);
+        assert!(out.contains("<html lang=\"en\">"));
+        assert!(out.contains("<h1>Weekly hours</h1>"));
+        assert!(out.contains("11/09/2026 to 11/15/2026"));
+        assert!(out.contains("<div class=\"l\">Expected workday</div>"));
+        assert!(out.contains("<div class=\"v\">5.5</div>"));
+        assert!(out.contains("<th>Mon 11/09</th>"));
+        assert!(out.contains("<td>Overtime</td>"));
+        let now = r.week_start.and_hms_opt(0, 0, 0).unwrap().and_utc().timestamp_millis() + 5 * 24 * H;
+        let days: Vec<_> = r.days.iter().map(|d| tr.day_calc(&tz(), *d, now).unwrap()).collect();
+        let projects = tr.projects().unwrap();
+        let det = html_report(&r, Some((&days, &projects)), &tz(), Lang::En);
+        assert!(det.contains("<h2>Records</h2>"));
+        assert!(det.contains("<th>Client / Project</th>"));
+        assert!(det.contains("<tr><td>11/11/2026</td>"));
+    }
+
+    #[test]
+    fn html_in_spanish() {
+        let (_tr, r) = report("Acme", "Alpha");
+        let out = html_report(&r, None, &tz(), Lang::Es);
+        assert!(out.contains("<html lang=\"es\">"));
+        assert!(out.contains("<h1>Horas de la semana</h1>"));
+        assert!(out.contains("09/11/2026 a 15/11/2026"));
+        assert!(out.contains("<th>Lun 09/11</th>"));
+        assert!(out.contains("<div class=\"v\">5,5</div>"));
+        assert!(out.contains("<td>Horas extra</td>"));
     }
 }

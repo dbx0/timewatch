@@ -10,6 +10,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use crate::domain::calc::{DayCalc, Grouping, WeekReport};
 use crate::domain::{Entry, Ms, Project, Settings};
 use crate::export::{self, ExportFormat};
+use crate::i18n::{fill, Lang};
 use crate::tracker::{AbsenceResolution, ClosedEntry, Tracker, TrackerError, TrackerSnapshot};
 use crate::tray;
 use crate::window::{self, HitRect, OverlayConfig, OverlayState};
@@ -36,6 +37,20 @@ impl AppState {
     }
 }
 
+/// The resolved UI language. Takes the lock: never call while holding it.
+pub fn current_lang(app: &AppHandle) -> Lang {
+    app.try_state::<AppState>().map_or_else(crate::i18n::system_lang, |s| s.lock().lang())
+}
+
+/// Pushes the current language to the tray, the window titles and every webview
+/// (`settings://language`). Call without holding the lock.
+pub fn apply_language(app: &AppHandle) {
+    let lang = current_lang(app);
+    tray::set_language(app, lang);
+    window::retitle(app, lang);
+    let _ = app.emit("settings://language", lang);
+}
+
 pub fn now_ms() -> Ms {
     Utc::now().timestamp_millis()
 }
@@ -50,23 +65,23 @@ pub fn day_dto(t: &Tracker, day: NaiveDate, now: Ms) -> Result<DayDto, TrackerEr
     Ok(DayDto { day: t.day_calc(&Local, day, now)?, projects: t.projects()? })
 }
 
-fn parse_date(s: &str) -> Result<NaiveDate, String> {
-    NaiveDate::parse_from_str(s, "%Y-%m-%d").map_err(|_| format!("Data inválida: {s}"))
+fn parse_date(s: &str, lang: Lang) -> Result<NaiveDate, String> {
+    NaiveDate::parse_from_str(s, "%Y-%m-%d").map_err(|_| fill(lang.strings().err_invalid_date, &[s]))
 }
 
-fn parse_grouping(s: &str) -> Result<Grouping, String> {
+fn parse_grouping(s: &str, lang: Lang) -> Result<Grouping, String> {
     match s {
         "project" => Ok(Grouping::Project),
         "client" => Ok(Grouping::Client),
-        _ => Err(format!("Agrupamento inválido: {s}")),
+        _ => Err(fill(lang.strings().err_invalid_grouping, &[s])),
     }
 }
 
-fn parse_format(s: &str) -> Result<ExportFormat, String> {
+fn parse_format(s: &str, lang: Lang) -> Result<ExportFormat, String> {
     match s {
         "csv" => Ok(ExportFormat::Csv),
         "html" => Ok(ExportFormat::Html),
-        _ => Err(format!("Formato inválido: {s}")),
+        _ => Err(fill(lang.strings().err_invalid_format, &[s])),
     }
 }
 
@@ -89,8 +104,8 @@ fn mutate_if<R>(
     let now = now_ms();
     let (out, snap) = {
         let mut t = state.lock();
-        let out = f(&mut t, now).map_err(|e| e.to_string())?;
-        let snap = t.snapshot(&Local, now).map_err(|e| e.to_string())?;
+        let out = f(&mut t, now).map_err(|e| e.message(t.lang()))?;
+        let snap = t.snapshot(&Local, now).map_err(|e| e.message(t.lang()))?;
         (out, snap)
     };
     if should_emit(&out, &snap) {
@@ -111,7 +126,14 @@ pub fn emit_if<R>(
 
 #[tauri::command]
 pub fn get_snapshot(state: State<AppState>) -> Result<TrackerSnapshot, String> {
-    state.lock().snapshot(&Local, now_ms()).map_err(|e| e.to_string())
+    let t = state.lock();
+    t.snapshot(&Local, now_ms()).map_err(|e| e.message(t.lang()))
+}
+
+/// The resolved UI language (`pt-BR`, `en` or `es`).
+#[tauri::command]
+pub fn get_language(state: State<AppState>) -> Lang {
+    state.lock().lang()
 }
 
 #[tauri::command]
@@ -168,14 +190,18 @@ pub fn update_project(app: AppHandle, state: State<AppState>, project: Project) 
 
 #[tauri::command]
 pub fn get_week(state: State<AppState>, week_start: String, grouping: String) -> Result<WeekReport, String> {
-    let (ws, g) = (parse_date(&week_start)?, parse_grouping(&grouping)?);
-    state.lock().week_report(&Local, ws, now_ms(), g).map_err(|e| e.to_string())
+    let t = state.lock();
+    let lang = t.lang();
+    let (ws, g) = (parse_date(&week_start, lang)?, parse_grouping(&grouping, lang)?);
+    t.week_report(&Local, ws, now_ms(), g).map_err(|e| e.message(lang))
 }
 
 #[tauri::command]
 pub fn get_day(state: State<AppState>, day: String) -> Result<DayDto, String> {
-    let d = parse_date(&day)?;
-    day_dto(&state.lock(), d, now_ms()).map_err(|e| e.to_string())
+    let t = state.lock();
+    let lang = t.lang();
+    let d = parse_date(&day, lang)?;
+    day_dto(&t, d, now_ms()).map_err(|e| e.message(lang))
 }
 
 #[tauri::command]
@@ -218,30 +244,40 @@ pub fn set_entry_note(
 
 #[tauri::command]
 pub fn unmark_lunch(app: AppHandle, state: State<AppState>, day: String) -> Result<(), String> {
-    let d = parse_date(&day)?;
+    let lang = state.lock().lang();
+    let d = parse_date(&day, lang)?;
     mutate(&app, &state, |t, _| t.unmark_lunch(d))
 }
 
 #[tauri::command]
 pub fn get_settings(state: State<AppState>) -> Result<Settings, String> {
-    state.lock().settings().map_err(|e| e.to_string())
+    let t = state.lock();
+    t.settings().map_err(|e| e.message(t.lang()))
 }
 
 #[tauri::command]
 pub fn set_settings(app: AppHandle, state: State<AppState>, settings: Settings) -> Result<(), String> {
-    let old = state.lock().settings().map_err(|e| e.to_string())?;
+    let (old, lang) = {
+        let t = state.lock();
+        let lang = t.lang();
+        (t.settings().map_err(|e| e.message(lang))?, lang)
+    };
     let shortcut_changed = old.shortcut != settings.shortcut;
+    let language_changed = old.language != settings.language;
     // Registering first means an invalid/taken shortcut leaves both the old one and the stored settings intact.
     if shortcut_changed {
-        tray::apply_shortcut(&app, Some(&old.shortcut), &settings.shortcut)?;
+        tray::apply_shortcut(&app, Some(&old.shortcut), &settings.shortcut, lang)?;
     }
     let autostart = settings.autostart;
     let new_shortcut = settings.shortcut.clone();
     if let Err(e) = mutate(&app, &state, |t, _| t.set_user_settings(settings)) {
         if shortcut_changed {
-            let _ = tray::apply_shortcut(&app, Some(&new_shortcut), &old.shortcut);
+            let _ = tray::apply_shortcut(&app, Some(&new_shortcut), &old.shortcut, lang);
         }
         return Err(e);
+    }
+    if language_changed {
+        apply_language(&app);
     }
     if old.autostart != autostart {
         // A login-item failure must not block saving the other settings.
@@ -261,10 +297,13 @@ pub fn export_week(
     detailed: bool,
     path: String,
 ) -> Result<(), String> {
-    let (ws, g, f) = (parse_date(&week_start)?, parse_grouping(&grouping)?, parse_format(&format)?);
-    let content = export::export_week(&state.lock(), &Local, ws, now_ms(), g, f, detailed)
-        .map_err(|e| e.to_string())?;
-    std::fs::write(&path, content).map_err(|e| format!("Não foi possível salvar o arquivo: {e}"))
+    let (content, lang) = {
+        let t = state.lock();
+        let lang = t.lang();
+        let (ws, g, f) = (parse_date(&week_start, lang)?, parse_grouping(&grouping, lang)?, parse_format(&format, lang)?);
+        (export::export_week(&t, &Local, ws, now_ms(), g, f, detailed, lang).map_err(|e| e.message(lang))?, lang)
+    };
+    std::fs::write(&path, content).map_err(|e| fill(lang.strings().err_save_file, &[&e.to_string()]))
 }
 
 /// Project identity colors, same order as `PROJECT_PALETTE` in `ColorPicker.tsx`.
@@ -366,6 +405,7 @@ pub fn get_overlay_config(overlay: State<OverlayState>) -> Option<OverlayConfig>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::i18n::Lang;
     use crate::store::Db;
 
     #[test]
@@ -427,9 +467,24 @@ mod tests {
 
     #[test]
     fn parsers_reject_garbage() {
-        assert!(parse_date("2026-11-09").is_ok());
-        assert!(parse_date("09/11/2026").is_err());
-        assert_eq!(parse_grouping("client"), Ok(Grouping::Client));
-        assert!(parse_format("pdf").is_err());
+        let p = Lang::PtBr;
+        assert!(parse_date("2026-11-09", p).is_ok());
+        assert_eq!(parse_date("09/11/2026", p), Err("Data inválida: 09/11/2026".into()));
+        assert_eq!(parse_grouping("client", p), Ok(Grouping::Client));
+        assert_eq!(parse_format("pdf", p), Err("Formato inválido: pdf".into()));
+    }
+
+    #[test]
+    fn parser_errors_per_language() {
+        assert_eq!(parse_date("x", Lang::En), Err("Invalid date: x".into()));
+        assert_eq!(parse_grouping("x", Lang::Es), Err("Agrupación inválida: x".into()));
+        assert_eq!(parse_format("pdf", Lang::En), Err("Invalid format: pdf".into()));
+    }
+
+    #[test]
+    fn get_language_resolves_settings_against_system() {
+        let mut t = Tracker::new(Db::open_in_memory().unwrap());
+        t.set_system_lang(Lang::Es);
+        assert_eq!(serde_json::to_value(t.lang()).unwrap(), "es");
     }
 }

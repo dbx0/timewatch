@@ -7,7 +7,8 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
-use crate::commands::AppState;
+use crate::commands::{current_lang, AppState};
+use crate::i18n::{fill, Lang};
 use crate::platform::{self, NotchInfo};
 
 pub const OVERLAY_LABEL: &str = "notch";
@@ -162,7 +163,7 @@ pub fn create_overlay(app: &AppHandle) -> Result<(), String> {
         return Ok(());
     }
     app.manage(OverlayState::default());
-    let win = WebviewWindowBuilder::new(app, OVERLAY_LABEL, WebviewUrl::App("index.html?view=notch".into()))
+    let win = WebviewWindowBuilder::new(app, OVERLAY_LABEL, WebviewUrl::App(window_url(OVERLAY_LABEL, current_lang(app)).into()))
         .title("Timewatch")
         .inner_size(OVERLAY_W, OVERLAY_H)
         .transparent(true)
@@ -306,21 +307,49 @@ fn start_monitor_poll(app: AppHandle) {
     });
 }
 
+/// OS title of a normal window (`report`, `settings`, `onboarding`) in `lang`.
+pub fn window_title(kind: &str, lang: Lang) -> Option<&'static str> {
+    let t = lang.strings();
+    match kind {
+        "report" => Some(t.win_report),
+        "settings" => Some(t.win_settings),
+        "onboarding" => Some(t.win_onboarding),
+        _ => None,
+    }
+}
+
+/// The page a window loads; `lang` lets it render in the right language from the first frame.
+pub fn window_url(kind: &str, lang: Lang) -> String {
+    format!("index.html?view={kind}&lang={}", lang.code())
+}
+
+/// Renames the open normal windows after a language change.
+pub fn retitle(app: &AppHandle, lang: Lang) {
+    for kind in ["report", "settings", "onboarding"] {
+        if let (Some(win), Some(title)) = (app.get_webview_window(kind), window_title(kind, lang)) {
+            let _ = win.set_title(title);
+        }
+    }
+}
+
 /// Creates the window for `kind` (`report`, `settings`, `onboarding`) or focuses it if it exists.
+/// Must not be called while holding the `AppState` lock (it reads the language).
 pub fn create_or_focus(app: &AppHandle, kind: &str) -> Result<(), String> {
-    let (w, h, center, resizable, title) = match kind {
-        "report" => (1020.0, 720.0, false, true, "Horas"),
-        "settings" => (780.0, 600.0, false, true, "Configurações"),
-        "onboarding" => (640.0, 560.0, true, false, "Bem-vindo"),
-        _ => return Err(format!("Janela desconhecida: {kind}")),
+    let lang = current_lang(app);
+    let (w, h, center, resizable) = match kind {
+        "report" => (1020.0, 720.0, false, true),
+        "settings" => (780.0, 600.0, false, true),
+        "onboarding" => (640.0, 560.0, true, false),
+        _ => return Err(fill(lang.strings().err_unknown_window, &[kind])),
     };
+    let title = window_title(kind, lang).unwrap_or("Timewatch");
     if let Some(win) = app.get_webview_window(kind) {
         let _ = win.show();
         let _ = win.unminimize();
         sync_activation_policy(app, None);
         return win.set_focus().map_err(|e| e.to_string());
     }
-    let mut b = WebviewWindowBuilder::new(app, kind, WebviewUrl::App(format!("index.html?view={kind}").into()))
+    let mut b = WebviewWindowBuilder::new(app, kind, WebviewUrl::App(window_url(kind, lang).into()))
         .title(title)
         .inner_size(w, h)
         .resizable(resizable)
@@ -401,6 +430,25 @@ mod tests {
         assert_eq!(l.mode, PillMode::Strip);
         assert_eq!(l.notch, None);
         assert_eq!((l.pill_w, l.pill_h), (160.0, 6.0));
+    }
+
+    #[test]
+    fn window_titles_per_language() {
+        use crate::i18n::Lang;
+        assert_eq!(window_title("report", Lang::PtBr), Some("Horas"));
+        assert_eq!(window_title("settings", Lang::PtBr), Some("Configurações"));
+        assert_eq!(window_title("onboarding", Lang::PtBr), Some("Bem-vindo"));
+        assert_eq!(window_title("report", Lang::En), Some("Hours"));
+        assert_eq!(window_title("settings", Lang::Es), Some("Configuración"));
+        assert_eq!(window_title("onboarding", Lang::En), Some("Welcome"));
+        assert_eq!(window_title("notch", Lang::En), None);
+    }
+
+    #[test]
+    fn window_url_carries_view_and_lang() {
+        use crate::i18n::Lang;
+        assert_eq!(window_url("report", Lang::En), "index.html?view=report&lang=en");
+        assert_eq!(window_url("notch", Lang::PtBr), "index.html?view=notch&lang=pt-BR");
     }
 
     #[test]

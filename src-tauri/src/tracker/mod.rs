@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 use crate::domain::calc::{self, DayCalc, Grouping, WeekReport};
 use crate::domain::time::{day_bounds, local_day};
 use crate::domain::{Entry, Lunch, Ms, Project, Settings, MAX_NOTE_CHARS};
+use crate::i18n::{fill, Lang};
 use crate::store::{repo, Db, StoreError};
 pub use undo::{UndoLog, UndoOp};
 
@@ -138,22 +139,53 @@ pub struct TrackerSnapshot {
     pub last_closed_entry: Option<ClosedEntry>,
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug)]
 pub enum TrackerError {
-    #[error("Erro ao acessar os dados: {0}")]
-    Store(#[from] StoreError),
-    #[error("Registro não encontrado")]
+    Store(StoreError),
     NotFound,
-    #[error("O início precisa ser antes do fim")]
     InvalidRange,
-    #[error("Esse horário sobrepõe outro registro")]
     Overlap,
-    #[error("O registro não pode terminar no futuro")]
     FutureEnd,
-    #[error("Nenhuma sessão ativa")]
     NoSession,
-    #[error("A nota pode ter no máximo 500 caracteres")]
     NoteTooLong,
+}
+
+impl TrackerError {
+    /// The user-facing message in `lang` (commands send this to the frontend).
+    pub fn message(&self, lang: Lang) -> String {
+        let t = lang.strings();
+        match self {
+            Self::Store(e) => fill(t.err_store, &[&e.to_string()]),
+            Self::NotFound => t.err_not_found.into(),
+            Self::InvalidRange => t.err_invalid_range.into(),
+            Self::Overlap => t.err_overlap.into(),
+            Self::FutureEnd => t.err_future_end.into(),
+            Self::NoSession => t.err_no_session.into(),
+            Self::NoteTooLong => t.err_note_too_long.into(),
+        }
+    }
+}
+
+/// Defaults to pt-BR; user-facing paths use `message(lang)`.
+impl std::fmt::Display for TrackerError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message(Lang::PtBr))
+    }
+}
+
+impl std::error::Error for TrackerError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Store(e) => Some(e),
+            _ => None,
+        }
+    }
+}
+
+impl From<StoreError> for TrackerError {
+    fn from(e: StoreError) -> Self {
+        Self::Store(e)
+    }
 }
 
 impl From<rusqlite::Error> for TrackerError {
@@ -162,7 +194,7 @@ impl From<rusqlite::Error> for TrackerError {
     }
 }
 
-/// Errors reach the frontend as their pt-BR message.
+/// Serialized as the pt-BR message (commands map errors with `message(lang)` instead).
 impl Serialize for TrackerError {
     fn serialize<S: serde::Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
         s.serialize_str(&self.to_string())
@@ -171,12 +203,33 @@ impl Serialize for TrackerError {
 
 type Result<T> = std::result::Result<T, TrackerError>;
 
+/// A one-shot message for the notch, rendered in the language current at snapshot time.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Notice {
+    /// Clock stopped on sleep at `HH:MM`.
+    Sleep(String),
+    /// Clock stopped at `HH:MM` because the app closed.
+    Quit(String),
+}
+
+impl Notice {
+    fn render(&self, lang: Lang) -> String {
+        let t = lang.strings();
+        match self {
+            Notice::Sleep(at) => fill(t.notice_sleep, &[at]),
+            Notice::Quit(at) => fill(t.notice_quit, &[at]),
+        }
+    }
+}
+
 pub struct Tracker {
     db: Db,
     pending: Option<Absence>,
     undo: Option<UndoLog>,
-    notice: Option<String>,
+    notice: Option<Notice>,
     last_closed: Option<ClosedEntry>,
+    /// The OS language, injected by the app (pt-BR until then, so tests are deterministic).
+    system_lang: Lang,
 }
 
 /// What `Tracker::run` does with the undo slot after a successful operation.
@@ -300,7 +353,16 @@ fn ensure_no_future_entry(db: &Db, now: Ms) -> Result<()> {
 
 impl Tracker {
     pub fn new(db: Db) -> Tracker {
-        Tracker { db, pending: None, undo: None, notice: None, last_closed: None }
+        Tracker { db, pending: None, undo: None, notice: None, last_closed: None, system_lang: Lang::PtBr }
+    }
+
+    pub fn set_system_lang(&mut self, lang: Lang) {
+        self.system_lang = lang;
+    }
+
+    /// The resolved UI language: the stored preference, `system` meaning the OS language.
+    pub fn lang(&self) -> Lang {
+        self.settings().map_or(self.system_lang, |s| s.language.resolve(self.system_lang))
     }
 
     /// Runs `f` in one transaction. On success the undo slot is updated per `mode` (a bool
@@ -515,10 +577,7 @@ impl Tracker {
                 save_session(db, None, false)
             })?;
             self.pending = None;
-            self.notice = Some(format!(
-                "O relógio foi parado às {}, quando o computador entrou em repouso",
-                hhmm(tz, stop_at)
-            ));
+            self.notice = Some(Notice::Sleep(hhmm(tz, stop_at)));
             return Ok(false);
         }
         // A newer absence replaces an unanswered one; the older interval stays counted.
@@ -636,7 +695,7 @@ impl Tracker {
             save_session(db, None, false)
         })?;
         self.pending = None;
-        self.notice = Some(format!("O relógio foi parado às {}, quando o app fechou", hhmm(tz, last)));
+        self.notice = Some(Notice::Quit(hhmm(tz, last)));
         Ok(Some(last))
     }
 
@@ -782,6 +841,8 @@ impl Tracker {
             (None, Some(s)) if paused => (ClockStatus::Paused, Some(s)),
             _ => (ClockStatus::Idle, None),
         };
+        let settings = self.settings()?;
+        let lang = settings.language.resolve(self.system_lang);
         let session_ms = session.as_ref().map_or(0, |s| {
             s.accum_ms + open.as_ref().map_or(0, |o| (now - o.start).max(0))
         });
@@ -824,12 +885,12 @@ impl Tracker {
             session_ms,
             running_since: open.as_ref().map(|o| o.start),
             today_ms: segs.iter().map(|g| g.end - g.start).sum(),
-            today_jornada_ms: self.settings()?.jornada_ms(today),
+            today_jornada_ms: settings.jornada_ms(today),
             recents,
             projects,
             pending_absence: self.pending.clone(),
             can_undo: self.undo.is_some(),
-            notice: self.notice.clone(),
+            notice: self.notice.as_ref().map(|n| n.render(lang)),
             last_closed_entry: self.last_closed,
         })
     }
