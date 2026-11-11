@@ -118,8 +118,17 @@ pub fn run() {
         .expect("error while building tauri application");
 
     app.run(|app, event| {
-        if let RunEvent::WindowEvent { label, event: WindowEvent::Destroyed, .. } = &event {
-            window::sync_activation_policy(app, Some(label));
+        match &event {
+            RunEvent::WindowEvent { label, event: WindowEvent::Destroyed, .. } => {
+                window::sync_activation_policy(app, Some(label));
+            }
+            // Alt+F4 / ⌘W (default macOS Window menu) on the overlay: keep the pill alive.
+            RunEvent::WindowEvent { label, event: WindowEvent::CloseRequested { api, .. }, .. }
+                if window::blocks_close(label) =>
+            {
+                api.prevent_close();
+            }
+            _ => {}
         }
         let quitting = match &event {
             // Last normal window closed (`code` None): keep running in the background.

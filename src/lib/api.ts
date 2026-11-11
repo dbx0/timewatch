@@ -74,8 +74,10 @@ export const onTick = (cb: (now: Ms) => void): Promise<UnlistenFn> =>
 
 export const onOverlayHover = (cb: (hover: boolean) => void): Promise<UnlistenFn> =>
   listen<boolean>("overlay://hover", (e) => cb(e.payload));
-export const onOverlayExpanded = (cb: (expanded: boolean) => void): Promise<UnlistenFn> =>
-  listen<boolean>("overlay://expanded", (e) => cb(e.payload));
+/** `focus` is true only for user-initiated opens (tray, shortcut); system opens never take the keyboard. */
+export type OverlayExpanded = { expanded: boolean; focus: boolean };
+export const onOverlayExpanded = (cb: (e: OverlayExpanded) => void): Promise<UnlistenFn> =>
+  listen<OverlayExpanded>("overlay://expanded", (e) => cb(e.payload));
 export const onOverlayConfig = (cb: (config: OverlayConfig) => void): Promise<UnlistenFn> =>
   listen<OverlayConfig>("overlay://config", (e) => cb(e.payload));
 export const onOverlayFocusSearch = (cb: () => void): Promise<UnlistenFn> =>

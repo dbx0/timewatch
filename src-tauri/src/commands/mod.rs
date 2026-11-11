@@ -295,7 +295,7 @@ pub async fn finish_onboarding(
 ) -> Result<(), String> {
     mutate(&app, &state, |t, now| apply_onboarding(t, &projects, start_index, now))?;
     close_onboarding(&app);
-    window::expand_overlay(&app);
+    window::expand_overlay(&app, true);
     let _ = app.emit("overlay://coach", ());
     Ok(())
 }

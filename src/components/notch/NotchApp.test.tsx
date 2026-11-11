@@ -15,7 +15,9 @@ const notch: OverlayConfig = { mode: "notch", notchWidth: 220, notchHeight: 38, 
 const strip: OverlayConfig = { mode: "strip", notchWidth: null, notchHeight: null, pillWidth: 160, pillHeight: 6 };
 
 let hover: (h: boolean) => void;
-let expanded: (e: boolean) => void;
+let expandedCb: (e: { expanded: boolean; focus: boolean }) => void;
+/** Tray / shortcut open (user-initiated, focus) or collapse. */
+const expanded = (e: boolean, focus = e) => expandedCb({ expanded: e, focus });
 let changed: (s: TrackerSnapshot) => void;
 let focusSearch: () => void;
 let coach: () => void;
@@ -36,7 +38,7 @@ describe("NotchApp", () => {
     act(() => useToasts.getState().dismiss());
     useTracker.setState({ snapshot: null, snapAt: 0, now: 0 });
     vi.mocked(api.onOverlayHover).mockImplementation(async (cb) => ((hover = cb), () => {}));
-    vi.mocked(api.onOverlayExpanded).mockImplementation(async (cb) => ((expanded = cb), () => {}));
+    vi.mocked(api.onOverlayExpanded).mockImplementation(async (cb) => ((expandedCb = cb), () => {}));
     vi.mocked(api.onChanged).mockImplementation(async (cb) => ((changed = cb), () => {}));
     vi.mocked(api.onOverlayFocusSearch).mockImplementation(async (cb) => ((focusSearch = cb), () => {}));
     vi.mocked(api.onOverlayCoach).mockImplementation(async (cb) => ((coach = cb), () => {}));
@@ -168,6 +170,20 @@ describe("NotchApp", () => {
     act(() => hover(false));
     act(() => void vi.advanceTimersByTime(1000));
     fireEvent.keyDown(window, { key: "Escape" });
+    expect(state()).toBe("open");
+  });
+
+  it("a system-opened absence question never takes keyboard focus", async () => {
+    await mount();
+    // The user is typing elsewhere when input resumes after an idle absence.
+    act(() =>
+      changed(snapshot({ pendingAbsence: { start: 0, end: 3_600_000, reason: "idle", projectId: 2 } })),
+    );
+    act(() => expanded(true, false));
+    expect(state()).toBe("open");
+    expect(api.overlayFocus).not.toHaveBeenCalled();
+    // Not pinned: blur does not close (and the pending question keeps it open anyway).
+    fireEvent.blur(window);
     expect(state()).toBe("open");
   });
 

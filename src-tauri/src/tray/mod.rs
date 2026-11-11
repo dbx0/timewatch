@@ -72,7 +72,7 @@ fn toggle_overlay(app: &AppHandle) {
     if expanded {
         window::collapse_overlay(app);
     } else {
-        window::expand_overlay(app);
+        window::expand_overlay(app, true);
     }
 }
 
@@ -90,7 +90,7 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<TrayIcon> {
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, ev| match ev.id().as_ref() {
-            "open" => window::expand_overlay(app),
+            "open" => window::expand_overlay(app, true),
             "week" => {
                 let _ = window::create_or_focus(app, "report");
             }

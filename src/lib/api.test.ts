@@ -95,11 +95,11 @@ describe("api", () => {
       "overlay://focus-search",
     ]);
     listen.mock.calls[0][1]({ payload: true });
-    listen.mock.calls[1][1]({ payload: false });
+    listen.mock.calls[1][1]({ payload: { expanded: false, focus: false } });
     listen.mock.calls[2][1]({ payload: { mode: "notch", notchWidth: 185, notchHeight: 32, pillWidth: 425, pillHeight: 32 } });
     listen.mock.calls[3][1]({ payload: null });
     expect(hover).toHaveBeenCalledWith(true);
-    expect(expanded).toHaveBeenCalledWith(false);
+    expect(expanded).toHaveBeenCalledWith({ expanded: false, focus: false });
     expect(config).toHaveBeenCalledWith({ mode: "notch", notchWidth: 185, notchHeight: 32, pillWidth: 425, pillHeight: 32 });
     expect(focus).toHaveBeenCalledTimes(1);
   });

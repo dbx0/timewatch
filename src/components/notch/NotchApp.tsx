@@ -163,8 +163,10 @@ export function NotchApp() {
         coachTimer.current = setTimeout(() => setCoach(false), COACH_MS);
       }),
       api.onOverlayHover(onHover),
-      api.onOverlayExpanded((e) => {
-        if (e) openPanel(true);
+      api.onOverlayExpanded(({ expanded, focus }) => {
+        // Only user-initiated opens (tray, shortcut) pin and take the keyboard; a system open
+        // (absence question) must never steal focus from what the user is typing.
+        if (expanded) openPanel(focus);
         else if (pendingRef.current) void api.overlaySetExpanded(true).catch(() => {});
         else closePanel();
       }),

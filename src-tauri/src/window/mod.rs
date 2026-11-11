@@ -228,12 +228,21 @@ pub fn reposition_overlay(app: &AppHandle) {
     let _ = app.emit("overlay://config", OverlayConfig::from(&layout));
 }
 
-/// Opens the panel (e.g. a pending absence question); does not take keyboard focus.
-pub fn expand_overlay(app: &AppHandle) {
+/// Payload of `overlay://expanded`. `focus` is true only for user-initiated opens (tray, shortcut,
+/// search click): the panel then pins and takes the keyboard. System-initiated opens (an absence
+/// question appearing while the user types) must never steal focus.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct ExpandedEvent {
+    pub expanded: bool,
+    pub focus: bool,
+}
+
+/// Opens the panel. `focus` asks the frontend to pin it and take keyboard focus (user-initiated only).
+pub fn expand_overlay(app: &AppHandle, focus: bool) {
     if let Some(state) = app.try_state::<OverlayState>() {
         state.set_expanded(true);
     }
-    let _ = app.emit("overlay://expanded", true);
+    let _ = app.emit("overlay://expanded", ExpandedEvent { expanded: true, focus });
 }
 
 pub fn collapse_overlay(app: &AppHandle) {
@@ -241,12 +250,12 @@ pub fn collapse_overlay(app: &AppHandle) {
         state.set_expanded(false);
     }
     platform::unfocus_overlay(app);
-    let _ = app.emit("overlay://expanded", false);
+    let _ = app.emit("overlay://expanded", ExpandedEvent { expanded: false, focus: false });
 }
 
 /// Expands the overlay and gives it keyboard focus (global shortcut, search field click).
 pub fn focus_overlay(app: &AppHandle) {
-    expand_overlay(app);
+    expand_overlay(app, true);
     platform::focus_overlay(app);
     let _ = app.emit("overlay://focus-search", ());
 }
@@ -324,6 +333,12 @@ pub fn create_or_focus(app: &AppHandle, kind: &str) -> Result<(), String> {
     b.build().map_err(|e| e.to_string())?;
     sync_activation_policy(app, None);
     Ok(())
+}
+
+/// The overlay must never close (Alt+F4 on Windows once it has focus, ⌘W through the macOS
+/// default Window menu): there would be no pill until restart. Normal windows close freely.
+pub fn blocks_close(label: &str) -> bool {
+    label == OVERLAY_LABEL
 }
 
 const NORMAL_WINDOWS: [&str; 3] = ["report", "settings", "onboarding"];
@@ -408,6 +423,20 @@ mod tests {
                 "mode": "notch", "notchWidth": 185.0, "notchHeight": 32.0, "pillWidth": 425.0, "pillHeight": 32.0
             })
         );
+    }
+
+    #[test]
+    fn only_the_overlay_refuses_to_close() {
+        assert!(blocks_close("notch"));
+        for l in ["report", "settings", "onboarding"] {
+            assert!(!blocks_close(l), "{l}");
+        }
+    }
+
+    #[test]
+    fn expanded_event_carries_focus_flag() {
+        let v = serde_json::to_value(ExpandedEvent { expanded: true, focus: false }).unwrap();
+        assert_eq!(v, serde_json::json!({ "expanded": true, "focus": false }));
     }
 
     #[test]

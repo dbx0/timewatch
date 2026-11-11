@@ -114,7 +114,8 @@ pub fn start_monitor(app: AppHandle) {
             });
             // The only producer of new pending absences: open the notch so the question is seen.
             if new_question {
-                crate::window::expand_overlay(&app);
+                // System-initiated: never take keyboard focus (the user is likely typing right now).
+                crate::window::expand_overlay(&app, false);
             }
         }
     });
