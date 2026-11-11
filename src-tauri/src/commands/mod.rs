@@ -271,25 +271,19 @@ pub struct OnboardingProject {
     pub client: String,
 }
 
-/// Pure part of finishing onboarding: creates the projects with palette colors, marks the
-/// settings as onboarded (keeping everything saved during the steps) and optionally starts one.
+/// Pure part of finishing onboarding: one transaction (see `Tracker::finish_onboarding`).
 pub fn apply_onboarding(
     t: &mut Tracker,
     projects: &[OnboardingProject],
     start_index: Option<usize>,
     now: Ms,
 ) -> Result<(), TrackerError> {
-    let mut created = Vec::with_capacity(projects.len());
-    for (i, p) in projects.iter().enumerate() {
-        created.push(t.create_project(p.name.trim(), p.client.trim(), palette_color(i))?);
-    }
-    let mut s = t.settings()?;
-    s.onboarded = true;
-    t.set_settings(s)?;
-    if let Some(p) = start_index.and_then(|i| created.get(i)) {
-        t.switch_to(p.id, now)?;
-    }
-    Ok(())
+    let rows: Vec<(String, String, String)> = projects
+        .iter()
+        .enumerate()
+        .map(|(i, p)| (p.name.trim().to_string(), p.client.trim().to_string(), palette_color(i).to_string()))
+        .collect();
+    t.finish_onboarding(&rows, start_index, now)
 }
 
 #[tauri::command]
@@ -396,6 +390,19 @@ mod tests {
         assert_eq!(s.rounding_min, 15);
         let snap = t.snapshot(&Local, 2_000).unwrap();
         assert_eq!(snap.session_project.unwrap().name, "P1");
+    }
+
+    #[test]
+    fn onboarding_failure_rolls_everything_back() {
+        let mut t = Tracker::new(Db::open_in_memory().unwrap());
+        let err = apply_onboarding(&mut t, &[op("A", "Acme"), op("B", "Acme")], Some(5), 1_000);
+        assert!(err.is_err());
+        assert!(t.projects().unwrap().is_empty());
+        assert!(!t.settings().unwrap().onboarded);
+        // retry with a valid index works and creates each project once
+        apply_onboarding(&mut t, &[op("A", "Acme"), op("B", "Acme")], Some(0), 1_000).unwrap();
+        assert_eq!(t.projects().unwrap().len(), 2);
+        assert!(t.settings().unwrap().onboarded);
     }
 
     #[test]

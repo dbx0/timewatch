@@ -303,6 +303,45 @@ impl Tracker {
         Ok(())
     }
 
+    /// Onboarding in ONE transaction: creates the projects (`(name, client, color)`), marks the
+    /// settings onboarded (other fields kept) and optionally starts `start_index`.
+    /// Any failure rolls everything back, so a retry cannot duplicate projects.
+    pub fn finish_onboarding(
+        &mut self,
+        projects: &[(String, String, String)],
+        start_index: Option<usize>,
+        now: Ms,
+    ) -> Result<()> {
+        let open = repo::open_entry(&self.db)?;
+        let pending = self.pending.clone();
+        self.run(false, |db, log| {
+            if start_index.is_some_and(|i| i >= projects.len()) {
+                return Err(TrackerError::NotFound);
+            }
+            let mut ids = Vec::with_capacity(projects.len());
+            for (name, client, color) in projects {
+                ids.push(repo::insert_project(db, name, client, color)?.id);
+            }
+            let mut st: Settings = repo::get_meta(db, META_SETTINGS)?.unwrap_or_default();
+            st.onboarded = true;
+            repo::set_meta(db, META_SETTINGS, &st)?;
+            if let Some(i) = start_index {
+                log.push(UndoOp::RestorePending(pending));
+                record_session(db, log)?;
+                if let Some(o) = &open {
+                    close_entry(db, log, o, now)?;
+                }
+                insert_entry(db, log, ids[i], now, None)?;
+                save_session(db, Some(&Session { project_id: ids[i], accum_ms: 0 }), false)?;
+            }
+            Ok(())
+        })?;
+        if start_index.is_some() {
+            self.pending = None;
+        }
+        Ok(())
+    }
+
     pub fn pause(&mut self, now: Ms) -> Result<()> {
         let Some(open) = repo::open_entry(&self.db)? else {
             return match load_session(&self.db)? {

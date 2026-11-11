@@ -40,10 +40,7 @@ export function OnboardingApp() {
 
   const run = (p: Promise<void>) => {
     setBusy(true);
-    p.catch((e) => {
-      toast(String(e));
-      setBusy(false);
-    });
+    p.catch((e) => toast(String(e))).finally(() => setBusy(false));
   };
   const next = () => setStep((s) => Math.min(STEPS - 1, s + 1));
   const back = () => setStep((s) => Math.max(0, s - 1));
