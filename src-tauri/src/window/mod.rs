@@ -147,6 +147,10 @@ impl OverlayState {
         self.expanded.store(expanded, Ordering::SeqCst);
     }
 
+    pub fn is_expanded(&self) -> bool {
+        self.expanded.load(Ordering::SeqCst)
+    }
+
     pub fn config(&self) -> Option<OverlayConfig> {
         self.layout.lock().unwrap_or_else(|p| p.into_inner()).as_ref().map(|(l, _)| l.into())
     }
@@ -304,6 +308,7 @@ pub fn create_or_focus(app: &AppHandle, kind: &str) -> Result<(), String> {
     if let Some(win) = app.get_webview_window(kind) {
         let _ = win.show();
         let _ = win.unminimize();
+        sync_activation_policy(app, None);
         return win.set_focus().map_err(|e| e.to_string());
     }
     let mut b = WebviewWindowBuilder::new(app, kind, WebviewUrl::App(format!("index.html?view={kind}").into()))
@@ -313,7 +318,24 @@ pub fn create_or_focus(app: &AppHandle, kind: &str) -> Result<(), String> {
     if center {
         b = b.center();
     }
-    b.build().map(|_| ()).map_err(|e| e.to_string())
+    b.build().map_err(|e| e.to_string())?;
+    sync_activation_policy(app, None);
+    Ok(())
+}
+
+const NORMAL_WINDOWS: [&str; 3] = ["report", "settings", "onboarding"];
+
+/// macOS: `Regular` (Dock icon, focusable, ⌘-tab) while a normal window is open, else `Accessory`.
+/// `closing` is a window that is being destroyed and must not be counted.
+pub fn sync_activation_policy(app: &AppHandle, closing: Option<&str>) {
+    #[cfg(target_os = "macos")]
+    {
+        let any = NORMAL_WINDOWS.iter().any(|l| Some(*l) != closing && app.get_webview_window(l).is_some());
+        let policy = if any { tauri::ActivationPolicy::Regular } else { tauri::ActivationPolicy::Accessory };
+        let _ = app.set_activation_policy(policy);
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = (app, closing);
 }
 
 #[cfg(test)]

@@ -6,12 +6,15 @@ pub mod i18n;
 pub mod platform;
 pub mod store;
 pub mod tracker;
+pub mod tray;
 pub mod window;
 
 use std::time::Duration;
 
 use chrono::Local;
-use tauri::{Emitter, Manager, RunEvent};
+use tauri::{Emitter, Manager, RunEvent, WindowEvent};
+use tauri_plugin_autostart::MacosLauncher;
+use tauri_plugin_global_shortcut::ShortcutState;
 
 use commands::{now_ms, AppState};
 use store::Db;
@@ -29,6 +32,10 @@ fn start_ticker(app: tauri::AppHandle) {
                 let _ = state.lock().heartbeat(now);
             }
             let _ = app.emit("tracker://tick", serde_json::json!({ "now": now }));
+            // Title/tooltip only change per minute or on state changes (the listener covers those).
+            if n.is_multiple_of(5) {
+                tray::refresh_tray(&app);
+            }
         }
     });
 }
@@ -36,9 +43,20 @@ fn start_ticker(app: tauri::AppHandle) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // single-instance must be the first plugin registered.
-    let builder = tauri::Builder::default().plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-        let _ = window::create_or_focus(app, "report");
-    }));
+    let builder = tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            let _ = window::create_or_focus(app, "report");
+        }))
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(|app, _shortcut, event| {
+                    if event.state() == ShortcutState::Pressed {
+                        window::focus_overlay(app);
+                    }
+                })
+                .build(),
+        )
+        .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, None));
     let app = platform::register(builder)
         .setup(|app| {
             let dir = app.path().app_data_dir()?;
@@ -51,6 +69,11 @@ pub fn run() {
             absence::start_monitor(app.handle().clone());
             // Task 15 adds onboarding.
             window::create_overlay(app.handle())?;
+            #[cfg(target_os = "macos")]
+            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+            tray::setup_tray(app.handle())?;
+            tray::refresh_tray(app.handle());
+            tray::apply_startup(app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -82,6 +105,9 @@ pub fn run() {
         .expect("error while building tauri application");
 
     app.run(|app, event| {
+        if let RunEvent::WindowEvent { label, event: WindowEvent::Destroyed, .. } = &event {
+            window::sync_activation_policy(app, Some(label));
+        }
         let quitting = match &event {
             // Last normal window closed (`code` None): keep running in the background.
             RunEvent::ExitRequested { code: None, api, .. } => {

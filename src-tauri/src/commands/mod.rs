@@ -11,6 +11,7 @@ use crate::domain::calc::{DayCalc, Grouping, WeekReport};
 use crate::domain::{Entry, Ms, Project, Settings};
 use crate::export::{self, ExportFormat};
 use crate::tracker::{AbsenceResolution, Tracker, TrackerError, TrackerSnapshot};
+use crate::tray;
 use crate::window::{self, HitRect, OverlayConfig, OverlayState};
 
 pub struct AppState {
@@ -216,7 +217,27 @@ pub fn get_settings(state: State<AppState>) -> Result<Settings, String> {
 
 #[tauri::command]
 pub fn set_settings(app: AppHandle, state: State<AppState>, settings: Settings) -> Result<(), String> {
-    mutate(&app, &state, |t, _| t.set_settings(settings))
+    let old = state.lock().settings().map_err(|e| e.to_string())?;
+    let shortcut_changed = old.shortcut != settings.shortcut;
+    // Registering first means an invalid/taken shortcut leaves both the old one and the stored settings intact.
+    if shortcut_changed {
+        tray::apply_shortcut(&app, Some(&old.shortcut), &settings.shortcut)?;
+    }
+    let autostart = settings.autostart;
+    let new_shortcut = settings.shortcut.clone();
+    if let Err(e) = mutate(&app, &state, |t, _| t.set_settings(settings)) {
+        if shortcut_changed {
+            let _ = tray::apply_shortcut(&app, Some(&new_shortcut), &old.shortcut);
+        }
+        return Err(e);
+    }
+    if old.autostart != autostart {
+        // A login-item failure must not block saving the other settings.
+        if let Err(e) = tray::apply_autostart(&app, autostart) {
+            eprintln!("[settings] autostart: {e}");
+        }
+    }
+    Ok(())
 }
 
 #[tauri::command]
