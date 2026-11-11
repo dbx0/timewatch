@@ -74,6 +74,16 @@ fn mutate<R>(
     state: &AppState,
     f: impl FnOnce(&mut Tracker, Ms) -> Result<R, TrackerError>,
 ) -> Result<R, String> {
+    mutate_if(app, state, f, |_, _| true)
+}
+
+/// Like `mutate`, but emits only when `should_emit(result, snapshot)` holds.
+fn mutate_if<R>(
+    app: &AppHandle,
+    state: &AppState,
+    f: impl FnOnce(&mut Tracker, Ms) -> Result<R, TrackerError>,
+    should_emit: impl FnOnce(&R, &TrackerSnapshot) -> bool,
+) -> Result<R, String> {
     let now = now_ms();
     let (out, snap) = {
         let mut t = state.lock();
@@ -81,8 +91,20 @@ fn mutate<R>(
         let snap = t.snapshot(&Local, now).map_err(|e| e.to_string())?;
         (out, snap)
     };
-    let _ = app.emit("tracker://changed", &snap);
+    if should_emit(&out, &snap) {
+        let _ = app.emit("tracker://changed", &snap);
+    }
     Ok(out)
+}
+
+/// For background threads: runs a mutation and conditionally emits; errors are ignored.
+pub fn emit_if<R>(
+    app: &AppHandle,
+    state: &AppState,
+    f: impl FnOnce(&mut Tracker) -> Result<R, TrackerError>,
+    should_emit: impl FnOnce(&R, &TrackerSnapshot) -> bool,
+) {
+    let _ = mutate_if(app, state, |t, _| f(t), |r, s| should_emit(r, s));
 }
 
 #[tauri::command]

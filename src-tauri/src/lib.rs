@@ -1,7 +1,9 @@
+pub mod absence;
 pub mod commands;
 pub mod domain;
 pub mod export;
 pub mod i18n;
+pub mod platform;
 pub mod store;
 pub mod tracker;
 pub mod window;
@@ -45,6 +47,7 @@ pub fn run() {
             tracker.reconcile_on_startup(&Local, now_ms())?;
             app.manage(AppState::new(tracker));
             start_ticker(app.handle().clone());
+            absence::start_monitor(app.handle().clone());
             // Task 9 replaces this with the overlay; Task 15 adds onboarding.
             window::create_or_focus(app.handle(), "report")?;
             Ok(())
