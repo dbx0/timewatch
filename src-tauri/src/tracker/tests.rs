@@ -317,6 +317,29 @@ fn sleep_with_stop_on_sleep_closes_at_sleep_start() {
 }
 
 #[test]
+fn stop_on_sleep_closes_at_the_sleep_moment_not_last_activity() {
+    // 40 min call without input (last activity 11:25), lid closed at 12:05: nothing is lost silently.
+    let (mut tr, a, _) = setup();
+    let mut st = tr.settings().unwrap();
+    st.stop_on_sleep = true;
+    tr.set_settings(st).unwrap();
+    tr.switch_to(a.id, t(9, 0)).unwrap();
+    assert!(!tr.begin_sleep_absence(&tz(), t(11, 25), t(12, 5), t(13, 10)).unwrap());
+    assert_eq!(all_entries(&tr), vec![e(1, a.id, t(9, 0), Some(t(12, 5)))]);
+    assert!(snap(&tr, t(13, 10)).notice.unwrap().contains("12:05"));
+}
+
+#[test]
+fn prompted_sleep_absence_starts_at_last_activity() {
+    let (mut tr, a, _) = setup();
+    tr.switch_to(a.id, t(9, 0)).unwrap();
+    assert!(tr.begin_sleep_absence(&tz(), t(11, 25), t(12, 5), t(13, 10)).unwrap());
+    let p = snap(&tr, t(13, 10)).pending_absence.unwrap();
+    assert_eq!((p.start, p.end, p.reason), (t(11, 25), t(13, 10), AbsenceReason::Sleep));
+    assert_eq!(all_entries(&tr), vec![e(1, a.id, t(9, 0), None)]);
+}
+
+#[test]
 fn idle_absence_with_stop_on_sleep_still_asks() {
     let (mut tr, a, _) = setup();
     let mut st = tr.settings().unwrap();

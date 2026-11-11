@@ -431,6 +431,23 @@ impl Tracker {
         end: Ms,
         reason: AbsenceReason,
     ) -> Result<bool> {
+        self.begin(tz, start, start, end, reason)
+    }
+
+    /// A sleep detected on wake. `last_activity` starts the absence the user is asked about;
+    /// with `stop_on_sleep` the entry closes at `sleep_at` (spec 6.3: "no momento do repouso"),
+    /// never at the earlier last activity: that would discount time without asking (anti-goal 1).
+    pub fn begin_sleep_absence<Tz: TimeZone>(
+        &mut self,
+        tz: &Tz,
+        last_activity: Ms,
+        sleep_at: Ms,
+        end: Ms,
+    ) -> Result<bool> {
+        self.begin(tz, last_activity.min(sleep_at), sleep_at, end, AbsenceReason::Sleep)
+    }
+
+    fn begin<Tz: TimeZone>(&mut self, tz: &Tz, start: Ms, stop_at: Ms, end: Ms, reason: AbsenceReason) -> Result<bool> {
         let Some(open) = repo::open_entry(&self.db)? else {
             return Ok(false);
         };
@@ -439,14 +456,15 @@ impl Tracker {
             return Ok(false);
         }
         if reason == AbsenceReason::Sleep && self.settings()?.stop_on_sleep {
+            let stop_at = stop_at.clamp(open.start, end);
             self.run(false, |db, log| {
-                close_entry(db, log, &open, start)?;
+                close_entry(db, log, &open, stop_at)?;
                 save_session(db, None, false)
             })?;
             self.pending = None;
             self.notice = Some(format!(
                 "O relógio foi parado às {}, quando o computador entrou em repouso",
-                hhmm(tz, start)
+                hhmm(tz, stop_at)
             ));
             return Ok(false);
         }

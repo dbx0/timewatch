@@ -18,7 +18,10 @@ const POLL: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum MonitorEvent {
-    Absence { start: Ms, end: Ms, reason: AbsenceReason },
+    /// `start` is the last activity (what the user is asked about). `sleep_at` is the moment the
+    /// machine went to sleep (sleep only): stop-on-sleep closes the entry there, never earlier,
+    /// so time without input before the lid closed is not discounted without asking.
+    Absence { start: Ms, end: Ms, reason: AbsenceReason, sleep_at: Option<Ms> },
 }
 
 pub struct AbsenceMonitor {
@@ -76,6 +79,7 @@ impl AbsenceMonitor {
                 start,
                 end: wall_now,
                 reason: AbsenceReason::Sleep,
+                sleep_at: Some(last_wall),
             });
         }
         if idle_ms < RESUME_IDLE_MS {
@@ -84,6 +88,7 @@ impl AbsenceMonitor {
                 start,
                 end: wall_now - idle_ms,
                 reason: AbsenceReason::Idle,
+                sleep_at: None,
             });
         }
         if !self.suppress_idle && idle_ms >= self.idle_threshold_ms {
@@ -111,14 +116,17 @@ pub fn start_monitor(app: AppHandle) {
             let state = app.state::<AppState>();
             let running = state.lock().snapshot(&Local, now_ms()).map(|s| s.status == ClockStatus::Running).unwrap_or(false);
             let idle_ms = (crate::platform::idle_seconds() * 1000.0) as i64;
-            let Some(MonitorEvent::Absence { start, end, reason }) =
+            let Some(MonitorEvent::Absence { start, end, reason, sleep_at }) =
                 monitor.tick(now_ms(), mono(), idle_ms, running)
             else {
                 continue;
             };
             // Emit when the user must be asked, or stop-on-sleep left a notice.
             let mut new_question = false;
-            emit_if(&app, &state, |t| t.begin_absence(&Local, start, end, reason), |asked, snap| {
+            emit_if(&app, &state, |t| match sleep_at {
+                Some(at) => t.begin_sleep_absence(&Local, start, at, end),
+                None => t.begin_absence(&Local, start, end, reason),
+            }, |asked, snap| {
                 new_question = *asked && snap.pending_absence.is_some();
                 *asked || snap.notice.is_some()
             });
@@ -162,7 +170,8 @@ mod tests {
             Some(MonitorEvent::Absence {
                 start: T0 + 10_000,
                 end: T0 + 3_914_000,
-                reason: AbsenceReason::Idle
+                reason: AbsenceReason::Idle,
+                sleep_at: None
             })
         );
         assert_eq!(m.tick(T0 + 3_920_000, mono(3_920_000), 1000, true), None);
@@ -186,7 +195,7 @@ mod tests {
         assert_eq!(
             ev,
             // Last input 100 ms before the last tick.
-            Some(MonitorEvent::Absence { start: T0 + 4_900, end: wake, reason: AbsenceReason::Sleep })
+            Some(MonitorEvent::Absence { start: T0 + 4_900, end: wake, reason: AbsenceReason::Sleep, sleep_at: Some(T0 + 5_000) })
         );
     }
 
@@ -200,7 +209,13 @@ mod tests {
         let ev = m.tick(wake, mono(1_205_000), 100, true);
         assert_eq!(
             ev,
-            Some(MonitorEvent::Absence { start: last_tick - 20 * MIN, end: wake, reason: AbsenceReason::Sleep })
+            // The sleep moment (last tick) is kept for stop-on-sleep, which must not lose the idle time.
+            Some(MonitorEvent::Absence {
+                start: last_tick - 20 * MIN,
+                end: wake,
+                reason: AbsenceReason::Sleep,
+                sleep_at: Some(last_tick)
+            })
         );
     }
 
@@ -211,7 +226,10 @@ mod tests {
         assert!(feed(&mut m, 5, 120, |s| s * 1000, true).is_empty());
         let wake = T0 + 120_000 + 3_600_000;
         let ev = m.tick(wake, mono(125_000), 100, true);
-        assert_eq!(ev, Some(MonitorEvent::Absence { start: T0, end: wake, reason: AbsenceReason::Sleep }));
+        assert_eq!(
+            ev,
+            Some(MonitorEvent::Absence { start: T0, end: wake, reason: AbsenceReason::Sleep, sleep_at: Some(T0 + 120_000) })
+        );
     }
 
     #[test]
@@ -225,7 +243,12 @@ mod tests {
         let ev = m.tick(wake2, mono(15_000), 7_205_000, true);
         assert_eq!(
             ev,
-            Some(MonitorEvent::Absence { start: wake + 5_000, end: wake2, reason: AbsenceReason::Sleep })
+            Some(MonitorEvent::Absence {
+                start: wake + 5_000,
+                end: wake2,
+                reason: AbsenceReason::Sleep,
+                sleep_at: Some(wake + 5_000)
+            })
         );
     }
 
