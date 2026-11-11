@@ -132,8 +132,18 @@ pub fn apply_shortcut(app: &AppHandle, old: Option<&str>, new: &str) -> Result<(
     Ok(())
 }
 
+/// Login items are only touched in release builds, or in debug builds that opt in.
+pub fn autostart_allowed(debug: bool, opt_in: bool) -> bool {
+    !debug || opt_in
+}
+
 /// Brings the OS login item in line with `enabled`.
 pub fn apply_autostart(app: &AppHandle, enabled: bool) -> Result<(), String> {
+    // Dev runs must not install a login item for the debug binary unless asked.
+    if !autostart_allowed(cfg!(debug_assertions), std::env::var_os("TIMEWATCH_DEV_AUTOSTART").is_some()) {
+        eprintln!("[tray] autostart change skipped (debug build)");
+        return Ok(());
+    }
     let mgr = app.autolaunch();
     let current = mgr.is_enabled().map_err(|e| e.to_string())?;
     if current == enabled {
@@ -148,11 +158,6 @@ pub fn apply_startup(app: &AppHandle) {
     match apply_shortcut(app, None, &settings.shortcut) {
         Ok(()) => eprintln!("[tray] global shortcut registered: {}", settings.shortcut),
         Err(e) => eprintln!("[tray] {e}"),
-    }
-    // Dev runs must not install a login item for the debug binary unless asked.
-    if cfg!(debug_assertions) && std::env::var_os("TIMEWATCH_DEV_AUTOSTART").is_none() {
-        eprintln!("[tray] autostart sync skipped (debug build)");
-        return;
     }
     match apply_autostart(app, settings.autostart) {
         Ok(()) => eprintln!("[tray] autostart set to {}", settings.autostart),
@@ -178,6 +183,14 @@ mod tests {
             can_undo: false,
             notice: None,
         }
+    }
+
+    #[test]
+    fn autostart_gate() {
+        assert!(autostart_allowed(false, false));
+        assert!(autostart_allowed(false, true));
+        assert!(autostart_allowed(true, true));
+        assert!(!autostart_allowed(true, false));
     }
 
     #[test]
