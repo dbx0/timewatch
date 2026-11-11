@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as api from "../../lib/api";
 import { addDays, atLocal, errMsg, parseIso, weekdayIndex } from "../../lib/dates";
-import { dayLabel, dur, hm } from "../../lib/format";
+import { dayLabel, dec, dur, hm, roundMs } from "../../lib/format";
 import { ptBR } from "../../i18n/pt-BR";
 import type { DayDto, IsoDate, Settings } from "../../lib/types";
 import { toast } from "../../stores/toast";
@@ -24,7 +24,7 @@ const HOUR = 3_600_000;
 
 export function DayView({ day, today, now, reloadKey, onDayChange, onBack }: Props) {
   const [data, setData] = useState<DayDto | null>(null);
-  const [settings, setSettings] = useState<Pick<Settings, "lunchMin" | "lunchRef"> | null>(null);
+  const [settings, setSettings] = useState<Pick<Settings, "lunchMin" | "lunchRef" | "roundingMin"> | null>(null);
   const seq = useRef(0);
 
   const load = useCallback(() => {
@@ -74,8 +74,12 @@ export function DayView({ day, today, now, reloadKey, onDayChange, onBack }: Pro
 
   const calc = data?.day;
   const projects = data?.projects ?? [];
-  const totalMs = calc ? Object.values(calc.perProject).reduce((a, p) => a + p.normalMs + p.extraMs, 0) : 0;
-  const extraMs = calc ? Object.values(calc.perProject).reduce((a, p) => a + p.extraMs, 0) : 0;
+  // Same numbers as the week grid: each project's normal and extra rounded, then summed.
+  const rounding = settings?.roundingMin ?? 0;
+  const perProject = calc ? Object.values(calc.perProject) : [];
+  const extraMs = perProject.reduce((a, p) => a + roundMs(p.extraMs, rounding), 0);
+  const totalMs = perProject.reduce((a, p) => a + roundMs(p.normalMs, rounding), 0) + extraMs;
+  const hours = (ms: number) => `${dec(ms) || "0"}h`;
   const d = parseIso(day);
   const title = `${t.weekdaysLong[weekdayIndex(day)]}, ${dayLabel(d)}`;
   const ref = settings?.lunchRef.slice(0, 5) ?? "";
@@ -161,9 +165,9 @@ export function DayView({ day, today, now, reloadKey, onDayChange, onBack }: Pro
       {calc && (
         <>
           <Cards>
-            <Card label={t.total} value={dur(totalMs)} />
-            <Card label={`${t.jornada}${calc.isHoliday ? t.holidayParen : ""}`} value={dur(calc.jornadaMs)} />
-            <Card label={t.overtime} value={dur(extraMs)} accent />
+            <Card label={t.total} value={hours(totalMs)} />
+            <Card label={`${t.jornada}${calc.isHoliday ? t.holidayParen : ""}`} value={hours(calc.jornadaMs)} />
+            <Card label={t.overtime} value={hours(extraMs)} accent />
           </Cards>
           {(calc.segments.length > 0 || calc.lunch) && (
             <Timeline day={day} segments={calc.segments} lunch={calc.lunch} projects={projects} now={day === today ? now : null} />

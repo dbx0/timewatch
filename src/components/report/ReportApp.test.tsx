@@ -269,6 +269,27 @@ describe("DayView", () => {
     expect(screen.queryByRole("button", { name: "12:00" })).toBeNull();
   });
 
+  it("day cards use the week's rounding and decimal hours", async () => {
+    vi.mocked(api.getSettings).mockResolvedValue({ ...settings, roundingMin: 15 });
+    const M = 60_000;
+    await openDay({
+      segments: [seg(7, "09:00", "12:00")],
+      // Rounded per project like the week grid: 2h07 -> 2h, 52m -> 45m; 1h08 -> 1h15.
+      perProject: { "2": { normalMs: 2 * H + 7 * M, extraMs: 52 * M }, "1": { normalMs: H + 8 * M, extraMs: 0 } },
+    });
+    const value = (label: string) => screen.getByText(label).nextElementSibling?.textContent;
+    expect(value("Total")).toBe("4h");
+    expect(value("Jornada")).toBe("8h");
+    expect(value("Hora extra")).toBe("0,75h");
+  });
+
+  it("day cards are exact decimals without rounding", async () => {
+    vi.mocked(api.getSettings).mockResolvedValue({ ...settings, roundingMin: 0 });
+    await openDay({ perProject: { "2": { normalMs: 5.5 * H, extraMs: 0 } } });
+    expect(screen.getByText("Total").nextElementSibling?.textContent).toBe("5,5h");
+    expect(screen.getByText("Hora extra").nextElementSibling?.textContent).toBe("0h");
+  });
+
   it("shows holiday in the jornada card", async () => {
     await openDay({ isHoliday: true });
     expect(screen.getByText("Jornada (feriado)")).toBeTruthy();

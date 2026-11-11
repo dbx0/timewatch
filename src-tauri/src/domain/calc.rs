@@ -251,12 +251,11 @@ pub fn week_report<Tz: TimeZone>(
             per_project.push((p, cells));
         }
     }
+    // The exact client breaks ties before the name, so "Acme" and "acme" never interleave
+    // (grouping below splits on exact client equality).
     per_project.sort_by(|a, b| {
-        let key = |p: &Project| (p.client.to_lowercase(), p.name.to_lowercase());
-        key(a.0)
-            .cmp(&key(b.0))
-            .then_with(|| a.0.client.cmp(&b.0.client))
-            .then_with(|| a.0.name.cmp(&b.0.name))
+        let key = |p: &Project| (p.client.to_lowercase(), p.client.clone(), p.name.to_lowercase(), p.name.clone());
+        key(a.0).cmp(&key(b.0))
     });
 
     let mut rows = Vec::new();
@@ -596,6 +595,29 @@ mod tests {
         assert_eq!(r.rows[1].cells[1], Cell { total_ms: 10 * H, extra_ms: 2 * H });
         assert_eq!(r.col_totals[0].total_ms, 3 * H);
         assert_eq!(r.holidays, [false; 7]);
+    }
+
+    #[test]
+    fn case_variant_clients_stay_grouped() {
+        let s = Settings::default();
+        let projects = vec![proj(1, "Alpha", "Acme"), proj(2, "Beta", "acme"), proj(3, "Gamma", "Acme")];
+        let entries = vec![
+            e(1, 1, t_on(mon(), "09:00"), Some(t_on(mon(), "10:00"))),
+            e(2, 2, t_on(mon(), "10:00"), Some(t_on(mon(), "11:00"))),
+            e(3, 3, t_on(mon(), "11:00"), Some(t_on(mon(), "12:00"))),
+        ];
+        let r = week_report(&tz(), mon(), today_after(), &projects, &entries, &[], &s, t("23:00"), Grouping::Project);
+        let labels: Vec<_> = r.rows.iter().map(|x| (x.kind, x.label.as_str())).collect();
+        assert_eq!(
+            labels,
+            vec![
+                (RowKind::ClientHeader, "Acme"),
+                (RowKind::Data, "Alpha"),
+                (RowKind::Data, "Gamma"),
+                (RowKind::ClientHeader, "acme"),
+                (RowKind::Data, "Beta"),
+            ]
+        );
     }
 
     #[test]
