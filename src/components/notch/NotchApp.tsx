@@ -1,0 +1,278 @@
+import { motion } from "framer-motion";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import * as api from "../../lib/api";
+import type { HitRect, OverlayConfig } from "../../lib/types";
+import { toast, useToasts } from "../../stores/toast";
+import { liveSessionMs, useTracker } from "../../stores/tracker";
+import { ToastHost } from "../ui/Toast";
+import { undoable } from "./actions";
+import { AbsencePrompt } from "./AbsencePrompt";
+import { AllProjects } from "./AllProjects";
+import { CreateProject } from "./CreateProject";
+import { isFocusEcho } from "./keyboard";
+import { Panel } from "./Panel";
+import { Pill } from "./Pill";
+
+/** Unpinned panel closes this long after the cursor leaves. */
+export const CLOSE_DELAY = 450;
+/** Strip mode: the bar grows into the pill first; the panel opens if the cursor stays. */
+export const STRIP_OPEN_DELAY = 300;
+const PANEL_W = 440;
+const SPRING = { type: "spring", stiffness: 420, damping: 32 } as const;
+/** Until `get_overlay_config` answers. */
+const FALLBACK: OverlayConfig = { mode: "strip", notchWidth: null, notchHeight: null, pillWidth: 160, pillHeight: 6 };
+
+type View = { kind: "main" } | { kind: "all" } | { kind: "create"; name: string };
+
+const sameDay = (a: number, b: number) => new Date(a).toDateString() === new Date(b).toDateString();
+
+export function NotchApp() {
+  const snapshot = useTracker((s) => s.snapshot);
+  const sessionMs = useTracker(liveSessionMs);
+  const toastUndo = useToasts((s) => !!s.current?.undo);
+  const [config, setConfig] = useState<OverlayConfig>(FALLBACK);
+  const [open, setOpenState] = useState(false);
+  const [grown, setGrown] = useState(false);
+  const [view, setView] = useState<View>({ kind: "main" });
+  const [focusReq, setFocusReq] = useState(0);
+
+  const openRef = useRef(false);
+  const pinnedRef = useRef(false);
+  const hoveringRef = useRef(false);
+  const pending = snapshot?.pendingAbsence ?? null;
+  const pendingRef = useRef(pending);
+  pendingRef.current = pending;
+  const configRef = useRef(config);
+  configRef.current = config;
+  const closeTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const growTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const surfaceRef = useRef<HTMLDivElement>(null);
+  const toastRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const wantSearchFocus = useRef(false);
+
+  const clearTimers = () => {
+    clearTimeout(closeTimer.current);
+    clearTimeout(growTimer.current);
+  };
+
+  const setOpen = useCallback((v: boolean) => {
+    if (openRef.current === v) return;
+    openRef.current = v;
+    setOpenState(v);
+    void api.overlaySetExpanded(v).catch(() => {});
+  }, []);
+
+  const openPanel = useCallback(
+    (pin: boolean) => {
+      clearTimers();
+      if (pin) pinnedRef.current = true;
+      setOpen(true);
+    },
+    [setOpen],
+  );
+
+  const closePanel = useCallback(() => {
+    clearTimers();
+    // The absence question keeps the panel open until it is answered.
+    if (pendingRef.current) return;
+    pinnedRef.current = false;
+    setOpen(false);
+    setView({ kind: "main" });
+    setGrown(hoveringRef.current && configRef.current.mode === "strip");
+  }, [setOpen]);
+
+  const onHover = useCallback(
+    (h: boolean) => {
+      hoveringRef.current = h;
+      if (h) {
+        clearTimeout(closeTimer.current);
+        if (openRef.current) return;
+        if (configRef.current.mode === "notch") {
+          openPanel(false);
+        } else {
+          setGrown(true);
+          clearTimeout(growTimer.current);
+          growTimer.current = setTimeout(() => {
+            if (hoveringRef.current) openPanel(false);
+          }, STRIP_OPEN_DELAY);
+        }
+        return;
+      }
+      clearTimeout(growTimer.current);
+      setGrown(false);
+      if (openRef.current && !pinnedRef.current && !pendingRef.current) {
+        clearTimeout(closeTimer.current);
+        closeTimer.current = setTimeout(closePanel, CLOSE_DELAY);
+      }
+    },
+    [openPanel, closePanel],
+  );
+
+  // Backend data and overlay events.
+  useEffect(() => {
+    const { setSnapshot, setNow, refresh } = useTracker.getState();
+    let refreshing = false;
+    api.getSnapshot().then((s) => s && setSnapshot(s), () => {});
+    api.getOverlayConfig().then((c) => c && setConfig(c), () => {});
+    const subs = [
+      api.onChanged((s) => setSnapshot(s)),
+      api.onTick((now) => {
+        setNow(now);
+        // Today's totals restart at local midnight: pull a fresh snapshot.
+        if (!refreshing && !sameDay(now, useTracker.getState().snapAt)) {
+          refreshing = true;
+          refresh().finally(() => (refreshing = false)).catch(() => {});
+        }
+      }),
+      api.onOverlayConfig(setConfig),
+      api.onOverlayHover(onHover),
+      api.onOverlayExpanded((e) => {
+        if (e) openPanel(true);
+        else if (pendingRef.current) void api.overlaySetExpanded(true).catch(() => {});
+        else closePanel();
+      }),
+      api.onOverlayFocusSearch(() => {
+        if (isFocusEcho()) return;
+        openPanel(true);
+        setView({ kind: "main" });
+        wantSearchFocus.current = true;
+        setFocusReq((n) => n + 1);
+      }),
+    ];
+    return () => {
+      clearTimers();
+      subs.forEach((p) => p.then((un) => un(), () => {}));
+    };
+  }, [onHover, openPanel, closePanel]);
+
+  // Global shortcut: focus the search field once it is rendered (one-shot request).
+  useEffect(() => {
+    if (!wantSearchFocus.current || !searchRef.current) return;
+    wantSearchFocus.current = false;
+    searchRef.current.focus();
+  }, [focusReq, open, view]);
+
+  // Esc closes; losing key focus (a click elsewhere) closes a pinned panel.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && openRef.current) {
+        e.preventDefault();
+        closePanel();
+      }
+    };
+    const onBlur = () => {
+      if (openRef.current && pinnedRef.current) closePanel();
+    };
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("blur", onBlur);
+    };
+  }, [closePanel]);
+
+  // A pending absence opens the panel; once answered (or undone elsewhere) it closes unless hovered.
+  const hadPending = useRef(false);
+  useEffect(() => {
+    if (pending) {
+      hadPending.current = true;
+      openPanel(false);
+    } else if (hadPending.current) {
+      hadPending.current = false;
+      pinnedRef.current = false;
+      if (!hoveringRef.current) closePanel();
+    }
+  }, [pending, openPanel, closePanel]);
+
+  // Backend notices (e.g. clock stopped when the app closed) become a toast once.
+  const lastNotice = useRef<string | null>(null);
+  const notice = snapshot?.notice ?? null;
+  const canUndo = snapshot?.canUndo ?? false;
+  useEffect(() => {
+    if (notice && notice !== lastNotice.current) toast(notice, canUndo ? undoable : undefined);
+    lastNotice.current = notice;
+  }, [notice, canUndo]);
+
+  // Hit rect: the pill/panel, plus the toast while it offers "Desfazer". Layout sizes (offset*)
+  // ignore the opening transform, so the final panel size is reported right away.
+  const lastRect = useRef("");
+  const report = useCallback(() => {
+    const s = surfaceRef.current;
+    if (!s) return;
+    let x0 = s.offsetLeft;
+    let y0 = s.offsetTop;
+    let x1 = x0 + s.offsetWidth;
+    let y1 = y0 + s.offsetHeight;
+    const t = toastRef.current;
+    if (t && toastUndo && t.offsetHeight > 0) {
+      x0 = Math.min(x0, t.offsetLeft);
+      y0 = Math.min(y0, t.offsetTop);
+      x1 = Math.max(x1, t.offsetLeft + t.offsetWidth);
+      y1 = Math.max(y1, t.offsetTop + t.offsetHeight);
+    }
+    const rect: HitRect = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+    const key = JSON.stringify(rect);
+    if (key === lastRect.current) return;
+    lastRect.current = key;
+    void api.overlaySetHitRect(rect).catch(() => {});
+  }, [toastUndo]);
+  const reportRef = useRef(report);
+  reportRef.current = report;
+  useLayoutEffect(() => report());
+  useEffect(() => {
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => reportRef.current());
+    if (surfaceRef.current) ro.observe(surfaceRef.current);
+    if (toastRef.current) ro.observe(toastRef.current);
+    return () => ro.disconnect();
+  }, []);
+
+  const notchInset = config.mode === "notch" ? (config.notchHeight ?? config.pillHeight) : 0;
+  const pillW = config.mode === "notch" ? config.pillWidth : grown ? 280 : config.pillWidth;
+  const toMain = () => setView({ kind: "main" });
+
+  return (
+    <div data-view="notch" data-state={open ? "open" : "closed"} className="relative flex w-full flex-col items-center text-[14px] leading-[1.4]">
+      <div ref={surfaceRef}>
+        {open ? (
+          <motion.div
+            onPointerDownCapture={() => {
+              pinnedRef.current = true;
+            }}
+            initial={{ opacity: 0, scaleX: pillW / PANEL_W, scaleY: 0.12 }}
+            animate={{ opacity: 1, scaleX: 1, scaleY: 1 }}
+            transition={SPRING}
+            className="rounded-b-[30px] px-[18px] pb-3.5 text-text shadow-[0_24px_60px_rgba(0,0,0,.6),0_0_0_1px_rgba(255,255,255,.04)]"
+            style={{
+              width: PANEL_W,
+              paddingTop: 16 + notchInset,
+              transformOrigin: "top center",
+              background: config.mode === "notch" ? "#000" : "var(--panel)",
+            }}
+          >
+            {pending ? (
+              <AbsencePrompt onResolved={() => (pinnedRef.current = false)} />
+            ) : view.kind === "all" ? (
+              <AllProjects onBack={toMain} onCreate={() => setView({ kind: "create", name: "" })} />
+            ) : view.kind === "create" ? (
+              <CreateProject initialName={view.name} onBack={toMain} onDone={toMain} />
+            ) : (
+              <Panel
+                inputRef={searchRef}
+                onCreate={(name) => setView({ kind: "create", name })}
+                onAll={() => setView({ kind: "all" })}
+                onClose={closePanel}
+              />
+            )}
+          </motion.div>
+        ) : (
+          <Pill config={config} snapshot={snapshot} sessionMs={sessionMs} grown={grown} onClick={() => openPanel(true)} />
+        )}
+      </div>
+      <div ref={toastRef} className="mt-2">
+        <ToastHost className="pointer-events-none flex justify-center" />
+      </div>
+    </div>
+  );
+}

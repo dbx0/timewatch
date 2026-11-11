@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clock, dayLabel, dec, dur, weekdayShort } from "./format";
+import { clock, dayLabel, dec, dur, hm, weekdayShort } from "./format";
 
 const H = 3_600_000;
 const M = 60_000;
@@ -21,6 +21,10 @@ describe("format", () => {
   it("clock", () => {
     expect(clock(8047000)).toBe("2:14:07");
     expect(clock(0)).toBe("0:00:00");
+  });
+  it("hm", () => {
+    expect(hm(new Date(2026, 10, 11, 9, 5).getTime())).toBe("09:05");
+    expect(hm(new Date(2026, 10, 11, 13, 40).getTime())).toBe("13:40");
   });
   it("dayLabel and weekdayShort", () => {
     expect(dayLabel(new Date(2026, 10, 10))).toBe("10 nov");

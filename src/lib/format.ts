@@ -48,3 +48,9 @@ export function dayLabel(date: Date | string): string {
 export function weekdayShort(i: number): string {
   return ptBR.weekdaysShort[i];
 }
+
+/** Local wall-clock "HH:MM" of an epoch ms. */
+export function hm(ms: number): string {
+  const d = new Date(ms);
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
