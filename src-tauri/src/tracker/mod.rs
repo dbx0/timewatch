@@ -44,6 +44,22 @@ pub struct Session {
     pub accum_ms: i64,
 }
 
+/// What a project holds: its entry count and total closed time.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectUsage {
+    pub entries: u32,
+    pub ms: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeletedProject {
+    pub project: Project,
+    pub entries: u32,
+    pub ms: i64,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum AbsenceReason {
@@ -150,6 +166,7 @@ pub enum TrackerError {
     FutureEnd,
     NoSession,
     NoteTooLong,
+    ProjectInSession,
 }
 
 impl TrackerError {
@@ -164,6 +181,7 @@ impl TrackerError {
             Self::FutureEnd => t.err_future_end.into(),
             Self::NoSession => t.err_no_session.into(),
             Self::NoteTooLong => t.err_note_too_long.into(),
+            Self::ProjectInSession => t.err_project_in_session.into(),
         }
     }
 }
@@ -299,6 +317,27 @@ fn running_session(s: Option<Session>, open: &Entry) -> Session {
         Some(s) if s.project_id == open.project_id => s,
         _ => Session { project_id: open.project_id, accum_ms: 0 },
     }
+}
+
+fn delete_project_in(db: &Db, log: &mut UndoLog, id: i64) -> Result<DeletedProject> {
+    let p = project(db, id)?;
+    let in_session = load_session(db)?.0.is_some_and(|s| s.project_id == id)
+        || repo::open_entry(db)?.is_some_and(|o| o.project_id == id);
+    if in_session {
+        return Err(TrackerError::ProjectInSession);
+    }
+    let es = repo::entries_of_project(db, id)?;
+    for e in &es {
+        log.push(UndoOp::RestoreEntry(e.clone()));
+    }
+    log.push(UndoOp::RestoreProject(p.clone()));
+    repo::delete_entries_of_project(db, id)?;
+    repo::delete_project(db, id)?;
+    Ok(DeletedProject {
+        project: p,
+        entries: es.len() as u32,
+        ms: es.iter().filter_map(|e| e.end.map(|end| (end - e.start).max(0))).sum(),
+    })
 }
 
 fn project(db: &Db, id: i64) -> Result<Project> {
@@ -734,6 +773,22 @@ impl Tracker {
             project(db, p.id)?;
             Ok(repo::update_project(db, &p)?)
         })
+    }
+
+    /// Entry count and total time of a project's entries (closed blocks).
+    pub fn project_usage(&self, id: i64) -> Result<ProjectUsage> {
+        project(&self.db, id)?;
+        let es = repo::entries_of_project(&self.db, id)?;
+        Ok(ProjectUsage {
+            entries: es.len() as u32,
+            ms: es.iter().filter_map(|e| e.end.map(|end| (end - e.start).max(0))).sum(),
+        })
+    }
+
+    /// Deletes a project and all its entries in one transaction. Refused for the project
+    /// in the session (running or paused). Undoable.
+    pub fn delete_project(&mut self, id: i64, _now: Ms) -> Result<DeletedProject> {
+        self.run(true, |db, log| delete_project_in(db, log, id))
     }
 
     pub fn add_entry(&mut self, pid: i64, start: Ms, end: Ms, now: Ms) -> Result<Entry> {

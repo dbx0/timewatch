@@ -121,6 +121,14 @@ export const en: Strings = {
     active: "active",
     archived: "archived",
     rename: "Rename",
+    deleteProject: (n: string) => `Delete project ${n}`,
+    deleteBlocked: "Stop the clock before deleting this project",
+    deleteConfirmEmpty: (n: string) => `Delete project ${n}?`,
+    deleteConfirmUsed: (n: string, hours: string, count: number) =>
+      `${n} has ${hours}h logged in ${count} ${count === 1 ? "entry" : "entries"}. Delete the project and all its entries?`,
+    deleteConfirm: "Delete",
+    deleteAll: "Delete all",
+    projectDeleted: "Project deleted",
   },
   onboarding: {
     skip: "Skip",

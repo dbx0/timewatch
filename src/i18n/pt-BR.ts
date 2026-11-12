@@ -119,6 +119,14 @@ export const ptBR = {
     active: "ativo",
     archived: "arquivado",
     rename: "Renomear",
+    deleteProject: (n: string) => `Apagar projeto ${n}`,
+    deleteBlocked: "Pare o relógio antes de apagar este projeto",
+    deleteConfirmEmpty: (n: string) => `Apagar o projeto ${n}?`,
+    deleteConfirmUsed: (n: string, hours: string, count: number) =>
+      `${n} tem ${hours}h registradas em ${count} ${count === 1 ? "registro" : "registros"}. Apagar o projeto e todos os registros?`,
+    deleteConfirm: "Apagar",
+    deleteAll: "Apagar tudo",
+    projectDeleted: "Projeto apagado",
   },
   onboarding: {
     skip: "Pular",

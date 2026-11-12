@@ -121,6 +121,14 @@ export const es: Strings = {
     active: "activo",
     archived: "archivado",
     rename: "Renombrar",
+    deleteProject: (n: string) => `Borrar proyecto ${n}`,
+    deleteBlocked: "Detén el reloj antes de borrar este proyecto",
+    deleteConfirmEmpty: (n: string) => `¿Borrar el proyecto ${n}?`,
+    deleteConfirmUsed: (n: string, hours: string, count: number) =>
+      `${n} tiene ${hours}h registradas en ${count} ${count === 1 ? "registro" : "registros"}. ¿Borrar el proyecto y todos los registros?`,
+    deleteConfirm: "Borrar",
+    deleteAll: "Borrar todo",
+    projectDeleted: "Proyecto borrado",
   },
   onboarding: {
     skip: "Omitir",

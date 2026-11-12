@@ -13,6 +13,15 @@ export interface Project {
   archived: boolean;
 }
 
+export interface ProjectUsage {
+  entries: number;
+  ms: Ms;
+}
+
+export interface DeletedProject extends ProjectUsage {
+  project: Project;
+}
+
 export interface Entry {
   id: number;
   projectId: number;

@@ -25,7 +25,7 @@ Frontend (`src`): `views/` (Notch, Report, Settings, Onboarding, escolhidos pela
 ## Comandos
 
 Estado e relógio: `get_snapshot`, `switch_project`, `pause_clock`, `resume_clock`, `stop_clock`, `resolve_absence`, `undo`.
-Projetos: `create_project`, `update_project`.
+Projetos: `create_project`, `update_project`, `project_usage`, `delete_project` (apaga o projeto e as entradas numa transação; recusado para o projeto da sessão; desfazível).
 Relatórios e entradas: `get_week`, `get_day`, `add_entry`, `update_entry`, `delete_entry`, `set_entry_note`, `unmark_lunch`. `pause_clock` e `stop_clock` devolvem o bloco fechado (`ClosedEntry`), usado pelo notch para pedir a nota.
 Configurações e exportação: `get_settings`, `set_settings`, `get_language` (idioma resolvido), `export_week`.
 Janelas e overlay: `open_window`, `overlay_set_hit_rect`, `overlay_set_expanded`, `overlay_focus`, `get_overlay_config`.

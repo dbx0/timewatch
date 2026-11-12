@@ -20,6 +20,7 @@ export function SettingsApp() {
   const [section, setSection] = useState<Section>("general");
   const [settings, setSettings] = useState<Settings | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [sessionId, setSessionId] = useState<number | null>(null);
   const current = useRef<Settings | null>(null);
 
   const apply = (s: Settings) => {
@@ -28,7 +29,7 @@ export function SettingsApp() {
   };
   const refetch = useCallback(() => api.getSettings().then(apply).catch(() => {}), []);
   const reloadProjects = useCallback(
-    () => api.getSnapshot().then((s) => setProjects(s.projects)).catch(() => {}),
+    () => api.getSnapshot().then((s) => { setProjects(s.projects); setSessionId(s.sessionProject?.id ?? null); }).catch(() => {}),
     [],
   );
 
@@ -37,7 +38,7 @@ export function SettingsApp() {
     void reloadProjects();
     let off = false;
     let unlisten: (() => void) | undefined;
-    void api.onChanged((s) => setProjects(s.projects)).then((u) => (off ? u() : (unlisten = u)));
+    void api.onChanged((s) => { setProjects(s.projects); setSessionId(s.sessionProject?.id ?? null); }).then((u) => (off ? u() : (unlisten = u)));
     return () => {
       off = true;
       unlisten?.();
@@ -83,7 +84,7 @@ export function SettingsApp() {
         {settings && section === "workday" && <WorkdaySection settings={settings} update={update} />}
         {settings && section === "lunch" && <LunchSection settings={settings} update={update} />}
         {settings && section === "absence" && <AbsenceSection settings={settings} update={update} />}
-        {section === "projects" && <ProjectsSection projects={projects} reload={() => void reloadProjects()} />}
+        {section === "projects" && <ProjectsSection projects={projects} sessionProjectId={sessionId} reload={() => void reloadProjects()} />}
       </main>
       <ToastHost />
     </div>

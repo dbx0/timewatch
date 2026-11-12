@@ -102,6 +102,8 @@ pub fn run() {
             commands::undo,
             commands::create_project,
             commands::update_project,
+            commands::project_usage,
+            commands::delete_project,
             commands::get_week,
             commands::get_day,
             commands::add_entry,

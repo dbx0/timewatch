@@ -14,6 +14,8 @@ import type {
   Ms,
   OverlayConfig,
   Project,
+  ProjectUsage,
+  DeletedProject,
   Settings,
   TrackerSnapshot,
   WeekReport,
@@ -33,6 +35,10 @@ export const undo = () => invoke<boolean>("undo");
 export const createProject = (name: string, client: string, color: string) =>
   invoke<Project>("create_project", { name, client, color });
 export const updateProject = (project: Project) => invoke<void>("update_project", { project });
+/** Entry count and total closed time of a project, for the delete confirmation. */
+export const projectUsage = (id: number) => invoke<ProjectUsage>("project_usage", { id });
+/** Deletes the project and its entries; undoable with `undo`. */
+export const deleteProject = (id: number) => invoke<DeletedProject>("delete_project", { id });
 
 export const getWeek = (weekStart: IsoDate, grouping: Grouping) =>
   invoke<WeekReport>("get_week", { weekStart, grouping });

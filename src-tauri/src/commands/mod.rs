@@ -11,7 +11,7 @@ use crate::domain::calc::{DayCalc, Grouping, WeekReport};
 use crate::domain::{Entry, Ms, Project, Settings};
 use crate::export::{self, ExportFormat};
 use crate::i18n::{fill, Lang};
-use crate::tracker::{AbsenceResolution, ClosedEntry, Tracker, TrackerError, TrackerSnapshot};
+use crate::tracker::{AbsenceResolution, ClosedEntry, DeletedProject, ProjectUsage, Tracker, TrackerError, TrackerSnapshot};
 use crate::tray;
 use crate::window::{self, HitRect, OverlayConfig, OverlayState};
 
@@ -186,6 +186,17 @@ pub fn create_project(
 #[tauri::command]
 pub fn update_project(app: AppHandle, state: State<AppState>, project: Project) -> Result<(), String> {
     mutate(&app, &state, |t, _| t.update_project(project))
+}
+
+#[tauri::command]
+pub fn project_usage(state: State<AppState>, id: i64) -> Result<ProjectUsage, String> {
+    let t = state.lock();
+    t.project_usage(id).map_err(|e| e.message(t.lang()))
+}
+
+#[tauri::command]
+pub fn delete_project(app: AppHandle, state: State<AppState>, id: i64) -> Result<DeletedProject, String> {
+    mutate(&app, &state, |t, now| t.delete_project(id, now))
 }
 
 #[tauri::command]

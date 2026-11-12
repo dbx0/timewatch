@@ -1,7 +1,8 @@
 import { useRef, useState } from "react";
+import { dec } from "../../lib/format";
 import { useT } from "../../i18n";
 import * as api from "../../lib/api";
-import type { Project } from "../../lib/types";
+import type { Project, ProjectUsage } from "../../lib/types";
 import { toast } from "../../stores/toast";
 import { Button } from "../ui/Button";
 import { textField } from "../ui/field";
@@ -82,14 +83,53 @@ function Name({ project, onRename }: { project: Project; onRename: (n: string) =
   );
 }
 
-export function ProjectsSection({ projects, reload }: { projects: Project[]; reload: () => void }) {
-  const t = useT().settings;
+function TrashIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M2.5 4h11M6 4V2.5h4V4M4 4l.6 9h6.8L12 4M6.5 6.5v4.5M9.5 6.5v4.5" />
+    </svg>
+  );
+}
+
+export function ProjectsSection({
+  projects,
+  sessionProjectId = null,
+  reload,
+}: {
+  projects: Project[];
+  sessionProjectId?: number | null;
+  reload: () => void;
+}) {
+  const L = useT();
+  const t = L.settings;
+  const [confirm, setConfirm] = useState<{ id: number; usage: ProjectUsage } | null>(null);
   const [client, setClient] = useState("");
   const [name, setName] = useState("");
   const nameRef = useRef<HTMLInputElement>(null);
 
   const fail = (e: unknown) => toast(String(e));
   const save = (p: Project) => api.updateProject(p).then(reload, fail);
+
+  const askDelete = async (p: Project) => {
+    if (confirm?.id === p.id) return setConfirm(null);
+    try {
+      setConfirm({ id: p.id, usage: await api.projectUsage(p.id) });
+    } catch (e) {
+      fail(e);
+    }
+  };
+  const doDelete = async (p: Project) => {
+    setConfirm(null);
+    try {
+      await api.deleteProject(p.id);
+      toast(t.projectDeleted, {
+        undo: () => void api.undo().then(reload, fail),
+      });
+      reload();
+    } catch (e) {
+      fail(e);
+    }
+  };
 
   const add = async () => {
     const n = name.trim();
@@ -126,15 +166,43 @@ export function ProjectsSection({ projects, reload }: { projects: Project[]; rel
           {projects
             .filter((p) => p.client === c)
             .map((p) => (
-              <div key={p.id} className={`flex items-center justify-between border-b border-[#1d1d24] py-2.5 ${p.archived ? "opacity-50" : ""}`}>
-                <div className="flex items-center gap-2.5">
-                  <ColorDot project={p} onPick={(color) => void save({ ...p, color })} />
-                  <Name project={p} onRename={(n) => void save({ ...p, name: n })} />
+              <div key={p.id} className="border-b border-[#1d1d24]">
+                <div className={`flex items-center justify-between py-2.5 ${p.archived ? "opacity-50" : ""}`}>
+                  <div className="flex items-center gap-2.5">
+                    <ColorDot project={p} onPick={(color) => void save({ ...p, color })} />
+                    <Name project={p} onRename={(n) => void save({ ...p, name: n })} />
+                  </div>
+                  <div className="flex items-center gap-2.5">
+                    <span className="text-xs text-dim">{p.archived ? t.archived : t.active}</span>
+                    <Toggle label={t.activeLabel(p.name)} checked={!p.archived} onChange={(on) => void save({ ...p, archived: !on })} />
+                    <span title={p.id === sessionProjectId ? t.deleteBlocked : undefined} className="inline-flex">
+                      <button
+                        type="button"
+                        aria-label={t.deleteProject(p.name)}
+                        disabled={p.id === sessionProjectId}
+                        onClick={() => void askDelete(p)}
+                        className="inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg text-mute outline-none transition hover:bg-raise2 hover:text-white focus-visible:ring-2 focus-visible:ring-accent2 disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-mute"
+                      >
+                        <TrashIcon />
+                      </button>
+                    </span>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2.5">
-                  <span className="text-xs text-dim">{p.archived ? t.archived : t.active}</span>
-                  <Toggle label={t.activeLabel(p.name)} checked={!p.archived} onChange={(on) => void save({ ...p, archived: !on })} />
-                </div>
+                {confirm?.id === p.id && (
+                  <div role="alertdialog" className="mb-2.5 flex items-center justify-between gap-3 rounded-[10px] bg-raise px-3 py-2.5">
+                    <span className="text-[13px]">
+                      {confirm.usage.entries === 0
+                        ? t.deleteConfirmEmpty(p.name)
+                        : t.deleteConfirmUsed(p.name, dec(confirm.usage.ms) || "0", confirm.usage.entries)}
+                    </span>
+                    <div className="flex flex-none gap-2">
+                      <Button variant="primary" size="sm" onClick={() => void doDelete(p)}>
+                        {confirm.usage.entries === 0 ? t.deleteConfirm : t.deleteAll}
+                      </Button>
+                      <Button size="sm" onClick={() => setConfirm(null)}>{L.notch.cancel}</Button>
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
         </div>

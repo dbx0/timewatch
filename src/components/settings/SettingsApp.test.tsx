@@ -7,6 +7,9 @@ vi.mock("../../lib/api", () => ({
   getSnapshot: vi.fn(),
   createProject: vi.fn(),
   updateProject: vi.fn(),
+  projectUsage: vi.fn(),
+  deleteProject: vi.fn(),
+  undo: vi.fn(),
   onChanged: vi.fn(),
 }));
 vi.mock("@tauri-apps/api/window", () => ({ availableMonitors: vi.fn() }));
@@ -44,6 +47,7 @@ const nav = (name: string) => fireEvent.click(screen.getByText(name));
 
 beforeEach(() => {
   vi.resetAllMocks();
+  setLang("pt-BR");
   useToasts.getState().dismiss();
   vi.mocked(api.getSettings).mockResolvedValue({ ...base });
   vi.mocked(api.setSettings).mockResolvedValue(undefined);
@@ -195,5 +199,67 @@ describe("SettingsApp", () => {
     fireEvent.change(input, { target: { value: "Portal B2C" } });
     fireEvent.keyDown(input, { key: "Enter" });
     expect(api.updateProject).toHaveBeenCalledWith({ ...projects[1], name: "Portal B2C" });
+  });
+
+  describe("delete project", () => {
+    const del = (name: string) => fireEvent.click(screen.getByRole("button", { name }));
+
+    it("asks a short question when the project has no entries, then deletes with an undo toast", async () => {
+      vi.mocked(api.projectUsage).mockResolvedValue({ entries: 0, ms: 0 });
+      vi.mocked(api.deleteProject).mockResolvedValue({ project: projects[0], entries: 0, ms: 0 });
+      vi.mocked(api.undo).mockResolvedValue(true);
+      await mount();
+      nav("Projetos");
+      del("Apagar projeto Migração SAP");
+      await flush();
+      expect(api.projectUsage).toHaveBeenCalledWith(projects[0].id);
+      expect(screen.getByText("Apagar o projeto Migração SAP?")).toBeTruthy();
+      fireEvent.click(screen.getByRole("button", { name: "Apagar" }));
+      await flush();
+      expect(api.deleteProject).toHaveBeenCalledWith(projects[0].id);
+      const t = useToasts.getState().current;
+      expect(t?.message).toBe("Projeto apagado");
+      t?.undo?.();
+      expect(api.undo).toHaveBeenCalled();
+    });
+
+    it("shows hours and entry count when the project has entries, and Cancelar keeps it", async () => {
+      vi.mocked(api.projectUsage).mockResolvedValue({ entries: 3, ms: 5_400_000 });
+      await mount();
+      nav("Projetos");
+      del("Apagar projeto Migração SAP");
+      await flush();
+      expect(
+        screen.getByText("Migração SAP tem 1,5h registradas em 3 registros. Apagar o projeto e todos os registros?"),
+      ).toBeTruthy();
+      fireEvent.click(screen.getByRole("button", { name: "Cancelar" }));
+      expect(screen.queryByRole("alertdialog")).toBeNull();
+      expect(api.deleteProject).not.toHaveBeenCalled();
+    });
+
+    it("uses Apagar tudo and the current language", async () => {
+      vi.mocked(api.projectUsage).mockResolvedValue({ entries: 1, ms: 3_600_000 });
+      await mount();
+      nav("Projetos");
+      act(() => setLang("en"));
+      del("Delete project Migração SAP");
+      await flush();
+      expect(
+        screen.getByText("Migração SAP has 1h logged in 1 entry. Delete the project and all its entries?"),
+      ).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Delete all" })).toBeTruthy();
+      act(() => setLang("pt-BR"));
+    });
+
+    it("is disabled for the project in the session", async () => {
+      await mount();
+      nav("Projetos");
+      const btn = screen.getByRole("button", { name: "Apagar projeto Portal B2B" }) as HTMLButtonElement;
+      expect(btn.disabled).toBe(true);
+      expect(screen.getByTitle("Pare o relógio antes de apagar este projeto")).toBeTruthy();
+      fireEvent.click(btn);
+      expect(api.projectUsage).not.toHaveBeenCalled();
+      expect((screen.getByRole("button", { name: "Apagar projeto Migração SAP" }) as HTMLButtonElement).disabled).toBe(false);
+    });
   });
 });

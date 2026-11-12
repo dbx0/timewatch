@@ -822,3 +822,75 @@ fn notices_render_in_the_current_language() {
     );
     assert_eq!(snap(&tr, t(13, 10)).notice_key, Some(format!("sleep:{}", t(12, 5))));
 }
+
+// ---- delete project ----
+
+#[test]
+fn delete_project_without_entries() {
+    let (mut tr, a, b) = setup();
+    let d = tr.delete_project(a.id, t(9, 0)).unwrap();
+    assert_eq!((d.project.id, d.entries, d.ms), (a.id, 0, 0));
+    assert_eq!(tr.projects().unwrap().iter().map(|p| p.id).collect::<Vec<_>>(), vec![b.id]);
+}
+
+#[test]
+fn delete_project_removes_its_entries_only() {
+    let (mut tr, a, b) = setup();
+    tr.add_entry(a.id, t(9, 0), t(10, 0), t(12, 0)).unwrap();
+    tr.add_entry(a.id, t(10, 0), t(10, 30), t(12, 0)).unwrap();
+    tr.add_entry(b.id, t(11, 0), t(11, 15), t(12, 0)).unwrap();
+    assert_eq!(tr.project_usage(a.id).unwrap(), ProjectUsage { entries: 2, ms: 90 * MIN });
+    let d = tr.delete_project(a.id, t(12, 0)).unwrap();
+    assert_eq!((d.entries, d.ms), (2, 90 * MIN));
+    let es = all_entries(&tr);
+    assert_eq!(es.len(), 1);
+    assert_eq!(es[0].project_id, b.id);
+}
+
+#[test]
+fn delete_project_refuses_session_project_running_or_paused() {
+    let (mut tr, a, b) = setup();
+    tr.switch_to(a.id, t(9, 0)).unwrap();
+    assert!(matches!(tr.delete_project(a.id, t(9, 5)), Err(TrackerError::ProjectInSession)));
+    tr.pause(t(9, 10)).unwrap();
+    assert!(matches!(tr.delete_project(a.id, t(9, 15)), Err(TrackerError::ProjectInSession)));
+    assert!(tr.delete_project(b.id, t(9, 15)).is_ok());
+    assert_eq!(all_entries(&tr).len(), 1);
+    tr.stop(t(9, 20)).unwrap();
+    assert!(tr.delete_project(a.id, t(9, 30)).is_ok());
+}
+
+#[test]
+fn delete_project_unknown_id_is_not_found() {
+    let (mut tr, _, _) = setup();
+    assert!(matches!(tr.delete_project(999, t(9, 0)), Err(TrackerError::NotFound)));
+    assert!(matches!(tr.project_usage(999), Err(TrackerError::NotFound)));
+}
+
+#[test]
+fn undo_delete_project_restores_project_and_entries_with_same_ids() {
+    let (mut tr, a, _b) = setup();
+    let e1 = tr.add_entry(a.id, t(9, 0), t(10, 0), t(12, 0)).unwrap();
+    let e2 = tr.add_entry(a.id, t(10, 0), t(10, 30), t(12, 0)).unwrap();
+    let before_projects = tr.projects().unwrap();
+    let before_entries = all_entries(&tr);
+    tr.delete_project(a.id, t(12, 0)).unwrap();
+    assert!(snap(&tr, t(12, 0)).can_undo);
+    assert!(tr.undo(t(12, 1)).unwrap());
+    assert_eq!(tr.projects().unwrap(), before_projects);
+    assert_eq!(all_entries(&tr), before_entries);
+    assert_eq!(all_entries(&tr).iter().map(|e| e.id).collect::<Vec<_>>(), vec![e1.id, e2.id]);
+}
+
+#[test]
+fn failed_delete_project_rolls_back() {
+    let (mut tr, a, _b) = setup();
+    tr.add_entry(a.id, t(9, 0), t(10, 0), t(12, 0)).unwrap();
+    let r: Result<()> = tr.run(true, |db, log| {
+        delete_project_in(db, log, a.id)?;
+        Err(TrackerError::NotFound)
+    });
+    assert!(r.is_err());
+    assert_eq!(tr.projects().unwrap().len(), 2);
+    assert_eq!(all_entries(&tr).len(), 1);
+}

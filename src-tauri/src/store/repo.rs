@@ -52,6 +52,36 @@ pub fn update_project(db: &Db, p: &Project) -> Result<()> {
     Ok(())
 }
 
+/// Inserts the project with its own id (used by undo of a project delete).
+pub fn put_project(db: &Db, p: &Project) -> Result<()> {
+    db.conn().execute(
+        "INSERT INTO projects(id, name, client, color, archived, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+         ON CONFLICT(id) DO UPDATE SET name = excluded.name, client = excluded.client,
+             color = excluded.color, archived = excluded.archived",
+        params![p.id, p.name, p.client, p.color, p.archived as i64, now_ms()],
+    )?;
+    Ok(())
+}
+
+pub fn delete_project(db: &Db, id: i64) -> Result<()> {
+    db.conn().execute("DELETE FROM projects WHERE id = ?1", params![id])?;
+    Ok(())
+}
+
+/// Every entry of one project, oldest first.
+pub fn entries_of_project(db: &Db, project_id: i64) -> Result<Vec<Entry>> {
+    let mut st = db.conn().prepare(
+        "SELECT id, project_id, start, \"end\", note FROM entries WHERE project_id = ?1 ORDER BY start, id",
+    )?;
+    let rows = st.query_map(params![project_id], entry_from)?.collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
+pub fn delete_entries_of_project(db: &Db, project_id: i64) -> Result<()> {
+    db.conn().execute("DELETE FROM entries WHERE project_id = ?1", params![project_id])?;
+    Ok(())
+}
+
 pub fn list_projects(db: &Db) -> Result<Vec<Project>> {
     let mut st =
         db.conn().prepare("SELECT id, name, client, color, archived FROM projects ORDER BY id")?;
