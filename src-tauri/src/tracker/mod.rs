@@ -6,9 +6,9 @@
 //! `meta.paused == true` means Paused; anything else is Idle. `Session.accum_ms` holds the
 //! time of the session's already-closed blocks.
 
-mod undo;
 #[cfg(test)]
 mod tests;
+mod undo;
 
 use chrono::{Duration, NaiveDate, TimeZone};
 use serde::{Deserialize, Serialize};
@@ -93,7 +93,9 @@ enum ResolutionRepr {
     Lunch,
     Keep,
     #[serde(rename_all = "camelCase")]
-    MoveTo { project_id: i64 },
+    MoveTo {
+        project_id: i64,
+    },
 }
 
 impl From<ResolutionRepr> for AbsenceResolution {
@@ -272,7 +274,11 @@ enum UndoMode {
 
 impl From<bool> for UndoMode {
     fn from(undoable: bool) -> Self {
-        if undoable { UndoMode::Record } else { UndoMode::Clear }
+        if undoable {
+            UndoMode::Record
+        } else {
+            UndoMode::Clear
+        }
     }
 }
 
@@ -315,7 +321,10 @@ fn record_session(db: &Db, log: &mut UndoLog) -> Result<(Option<Session>, bool)>
 fn running_session(s: Option<Session>, open: &Entry) -> Session {
     match s {
         Some(s) if s.project_id == open.project_id => s,
-        _ => Session { project_id: open.project_id, accum_ms: 0 },
+        _ => Session {
+            project_id: open.project_id,
+            accum_ms: 0,
+        },
     }
 }
 
@@ -336,20 +345,37 @@ fn delete_project_in(db: &Db, log: &mut UndoLog, id: i64) -> Result<DeletedProje
     Ok(DeletedProject {
         project: p,
         entries: es.len() as u32,
-        ms: es.iter().filter_map(|e| e.end.map(|end| (end - e.start).max(0))).sum(),
+        ms: es
+            .iter()
+            .filter_map(|e| e.end.map(|end| (end - e.start).max(0)))
+            .sum(),
     })
 }
 
 fn project(db: &Db, id: i64) -> Result<Project> {
-    repo::list_projects(db)?.into_iter().find(|p| p.id == id).ok_or(TrackerError::NotFound)
+    repo::list_projects(db)?
+        .into_iter()
+        .find(|p| p.id == id)
+        .ok_or(TrackerError::NotFound)
 }
 
 /// Closes `e` at `at` (never before its start). Returns the closed block.
 fn close_entry(db: &Db, log: &mut UndoLog, e: &Entry, at: Ms) -> Result<ClosedEntry> {
     log.push(UndoOp::RestoreEntry(e.clone()));
     let end = at.max(e.start);
-    repo::update_entry(db, &Entry { end: Some(end), ..e.clone() })?;
-    Ok(ClosedEntry { id: e.id, project_id: e.project_id, start: e.start, end })
+    repo::update_entry(
+        db,
+        &Entry {
+            end: Some(end),
+            ..e.clone()
+        },
+    )?;
+    Ok(ClosedEntry {
+        id: e.id,
+        project_id: e.project_id,
+        start: e.start,
+        end,
+    })
 }
 
 fn insert_entry(db: &Db, log: &mut UndoLog, pid: i64, start: Ms, end: Option<Ms>) -> Result<Entry> {
@@ -380,9 +406,9 @@ fn validate_range(db: &Db, exclude: Option<i64>, start: Ms, end: Ms, now: Ms) ->
     if end > now {
         return Err(TrackerError::FutureEnd);
     }
-    let clash = repo::entries_between(db, start, end)?.into_iter().any(|o| {
-        Some(o.id) != exclude && start < o.end.unwrap_or(now) && o.start < end
-    });
+    let clash = repo::entries_between(db, start, end)?
+        .into_iter()
+        .any(|o| Some(o.id) != exclude && start < o.end.unwrap_or(now) && o.start < end);
     if clash {
         return Err(TrackerError::Overlap);
     }
@@ -392,7 +418,9 @@ fn validate_range(db: &Db, exclude: Option<i64>, start: Ms, end: Ms, now: Ms) ->
 /// Refuses to open an entry at `now` while a closed entry ends after it (legacy data from before
 /// `validate_range` rejected future ends): the open entry would overlap it.
 fn ensure_no_future_entry(db: &Db, now: Ms) -> Result<()> {
-    let future = repo::entries_between(db, now, Ms::MAX)?.into_iter().any(|o| o.end.is_some_and(|e| e > now));
+    let future = repo::entries_between(db, now, Ms::MAX)?
+        .into_iter()
+        .any(|o| o.end.is_some_and(|e| e > now));
     if future {
         return Err(TrackerError::FutureEnd);
     }
@@ -401,7 +429,14 @@ fn ensure_no_future_entry(db: &Db, now: Ms) -> Result<()> {
 
 impl Tracker {
     pub fn new(db: Db) -> Tracker {
-        Tracker { db, pending: None, undo: None, notice: None, last_closed: None, system_lang: Lang::PtBr }
+        Tracker {
+            db,
+            pending: None,
+            undo: None,
+            notice: None,
+            last_closed: None,
+            system_lang: Lang::PtBr,
+        }
     }
 
     pub fn set_system_lang(&mut self, lang: Lang) {
@@ -410,7 +445,8 @@ impl Tracker {
 
     /// The resolved UI language: the stored preference, `system` meaning the OS language.
     pub fn lang(&self) -> Lang {
-        self.settings().map_or(self.system_lang, |s| s.language.resolve(self.system_lang))
+        self.settings()
+            .map_or(self.system_lang, |s| s.language.resolve(self.system_lang))
     }
 
     /// Runs `f` in one transaction. On success the undo slot is updated per `mode` (a bool
@@ -478,7 +514,14 @@ impl Tracker {
                 close_entry(db, log, o, now)?;
             }
             insert_entry(db, log, pid, now, None)?;
-            save_session(db, Some(&Session { project_id: pid, accum_ms: 0 }), false)
+            save_session(
+                db,
+                Some(&Session {
+                    project_id: pid,
+                    accum_ms: 0,
+                }),
+                false,
+            )
         })?;
         self.pending = None;
         Ok(())
@@ -513,7 +556,14 @@ impl Tracker {
                     close_entry(db, log, o, now)?;
                 }
                 insert_entry(db, log, ids[i], now, None)?;
-                save_session(db, Some(&Session { project_id: ids[i], accum_ms: 0 }), false)?;
+                save_session(
+                    db,
+                    Some(&Session {
+                        project_id: ids[i],
+                        accum_ms: 0,
+                    }),
+                    false,
+                )?;
             }
             Ok(())
         })?;
@@ -607,10 +657,23 @@ impl Tracker {
         sleep_at: Ms,
         end: Ms,
     ) -> Result<bool> {
-        self.begin(tz, last_activity.min(sleep_at), sleep_at, end, AbsenceReason::Sleep)
+        self.begin(
+            tz,
+            last_activity.min(sleep_at),
+            sleep_at,
+            end,
+            AbsenceReason::Sleep,
+        )
     }
 
-    fn begin<Tz: TimeZone>(&mut self, tz: &Tz, start: Ms, stop_at: Ms, end: Ms, reason: AbsenceReason) -> Result<bool> {
+    fn begin<Tz: TimeZone>(
+        &mut self,
+        tz: &Tz,
+        start: Ms,
+        stop_at: Ms,
+        end: Ms,
+        reason: AbsenceReason,
+    ) -> Result<bool> {
         let Some(open) = repo::open_entry(&self.db)? else {
             return Ok(false);
         };
@@ -625,11 +688,19 @@ impl Tracker {
                 save_session(db, None, false)
             })?;
             self.pending = None;
-            self.notice = Some(Notice::Sleep { at: stop_at, hhmm: hhmm(tz, stop_at) });
+            self.notice = Some(Notice::Sleep {
+                at: stop_at,
+                hhmm: hhmm(tz, stop_at),
+            });
             return Ok(false);
         }
         // A newer absence replaces an unanswered one; the older interval stays counted.
-        self.pending = Some(Absence { start, end, reason, project_id: open.project_id });
+        self.pending = Some(Absence {
+            start,
+            end,
+            reason,
+            project_id: open.project_id,
+        });
         Ok(true)
     }
 
@@ -682,7 +753,14 @@ impl Tracker {
                     Some(old) => log.push(UndoOp::RestoreLunch(old)),
                     None => log.push(UndoOp::DeleteLunch(day)),
                 }
-                repo::upsert_lunch(db, &Lunch { day, start: a.start, end: back })?;
+                repo::upsert_lunch(
+                    db,
+                    &Lunch {
+                        day,
+                        start: a.start,
+                        end: back,
+                    },
+                )?;
             }
             Ok(())
         })?;
@@ -743,7 +821,10 @@ impl Tracker {
             save_session(db, None, false)
         })?;
         self.pending = None;
-        self.notice = Some(Notice::Quit { at: last, hhmm: hhmm(tz, last) });
+        self.notice = Some(Notice::Quit {
+            at: last,
+            hhmm: hhmm(tz, last),
+        });
         Ok(Some(last))
     }
 
@@ -765,7 +846,9 @@ impl Tracker {
     // ---- projects, entries, lunches ----
 
     pub fn create_project(&mut self, name: &str, client: &str, color: &str) -> Result<Project> {
-        self.run(false, |db, _| Ok(repo::insert_project(db, name, client, color)?))
+        self.run(false, |db, _| {
+            Ok(repo::insert_project(db, name, client, color)?)
+        })
     }
 
     pub fn update_project(&mut self, p: Project) -> Result<()> {
@@ -781,7 +864,10 @@ impl Tracker {
         let es = repo::entries_of_project(&self.db, id)?;
         Ok(ProjectUsage {
             entries: es.len() as u32,
-            ms: es.iter().filter_map(|e| e.end.map(|end| (end - e.start).max(0))).sum(),
+            ms: es
+                .iter()
+                .filter_map(|e| e.end.map(|end| (end - e.start).max(0)))
+                .sum(),
         })
     }
 
@@ -832,7 +918,10 @@ impl Tracker {
                 if new.end.is_some() {
                     save_session(db, None, false)?;
                 } else if new.project_id != old.project_id {
-                    let s = Session { project_id: new.project_id, ..running_session(s, &old) };
+                    let s = Session {
+                        project_id: new.project_id,
+                        ..running_session(s, &old)
+                    };
                     save_session(db, Some(&s), false)?;
                 }
             }
@@ -869,7 +958,10 @@ impl Tracker {
     /// Not undoable, and keeps the previous undo (e.g. the stop that prompted the note).
     pub fn set_entry_note(&mut self, id: i64, note: Option<String>) -> Result<Entry> {
         let note = note.map(|n| n.trim().to_string()).filter(|n| !n.is_empty());
-        if note.as_ref().is_some_and(|n| n.chars().count() > MAX_NOTE_CHARS) {
+        if note
+            .as_ref()
+            .is_some_and(|n| n.chars().count() > MAX_NOTE_CHARS)
+        {
             return Err(TrackerError::NoteTooLong);
         }
         self.run(UndoMode::Keep, |db, _| {
@@ -914,8 +1006,12 @@ impl Tracker {
         let today = local_day(tz, now);
         let bounds = day_bounds(tz, today);
         let segs = calc::day_segments(&repo::entries_between(db, bounds.0, bounds.1)?, bounds, now);
-        let project_today =
-            |pid: i64| segs.iter().filter(|g| g.project_id == pid).map(|g| g.end - g.start).sum();
+        let project_today = |pid: i64| {
+            segs.iter()
+                .filter(|g| g.project_id == pid)
+                .map(|g| g.end - g.start)
+                .sum()
+        };
 
         let mut picked: Vec<Project> = Vec::new();
         for pid in repo::recent_project_ids(db, now)? {
@@ -994,6 +1090,14 @@ impl Tracker {
         let (from, to) = day_bounds(tz, day);
         let entries = repo::entries_between(&self.db, from, to)?;
         let lunches = repo::lunches_between(&self.db, day, day)?;
-        Ok(calc::day_calc(tz, day, local_day(tz, now), &entries, &lunches, &self.settings()?, now))
+        Ok(calc::day_calc(
+            tz,
+            day,
+            local_day(tz, now),
+            &entries,
+            &lunches,
+            &self.settings()?,
+            now,
+        ))
     }
 }

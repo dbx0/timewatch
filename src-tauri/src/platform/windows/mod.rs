@@ -10,7 +10,10 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use crate::window::OVERLAY_LABEL;
 
 pub fn idle_seconds() -> f64 {
-    let mut info = LASTINPUTINFO { cbSize: std::mem::size_of::<LASTINPUTINFO>() as u32, dwTime: 0 };
+    let mut info = LASTINPUTINFO {
+        cbSize: std::mem::size_of::<LASTINPUTINFO>() as u32,
+        dwTime: 0,
+    };
     // SAFETY: `info` is a valid LASTINPUTINFO with cbSize set.
     if !unsafe { GetLastInputInfo(&mut info) }.as_bool() {
         return 0.0;
@@ -40,7 +43,11 @@ fn hwnd(window: &WebviewWindow) -> Option<HWND> {
 /// then queues a main-thread task that re-adds WS_EX_TOOLWINDOW and runs `then`. Event-loop
 /// messages are FIFO (and both run inline when already on the main thread), so the task runs
 /// after tao's `SetWindowLongW`.
-fn with_toolwindow(window: &WebviewWindow, f: impl FnOnce(&WebviewWindow), then: impl FnOnce(HWND) + Send + 'static) {
+fn with_toolwindow(
+    window: &WebviewWindow,
+    f: impl FnOnce(&WebviewWindow),
+    then: impl FnOnce(HWND) + Send + 'static,
+) {
     f(window);
     let Some(h) = hwnd(window) else { return };
     let raw = h.0 as usize;
@@ -72,7 +79,11 @@ pub fn show_overlay(window: &WebviewWindow) {
     with_toolwindow(window, |w| drop(w.show()), |_| {});
 }
 
-pub fn set_frame(window: &WebviewWindow, size: tauri::LogicalSize<f64>, pos: tauri::PhysicalPosition<i32>) {
+pub fn set_frame(
+    window: &WebviewWindow,
+    size: tauri::LogicalSize<f64>,
+    pos: tauri::PhysicalPosition<i32>,
+) {
     with_toolwindow(
         window,
         |w| {
@@ -89,14 +100,22 @@ pub fn set_ignore_cursor_events(window: &WebviewWindow, ignore: bool) {
 
 /// Focusability goes through Tauri so tao's own flags (and later rebuilds) agree.
 pub fn focus_overlay(app: &AppHandle) {
-    let Some(win) = app.get_webview_window(OVERLAY_LABEL) else { return };
-    with_toolwindow(&win, |w| drop(w.set_focusable(true)), |h| {
-        // SAFETY: valid HWND of our own window.
-        let _ = unsafe { SetForegroundWindow(h) };
-    });
+    let Some(win) = app.get_webview_window(OVERLAY_LABEL) else {
+        return;
+    };
+    with_toolwindow(
+        &win,
+        |w| drop(w.set_focusable(true)),
+        |h| {
+            // SAFETY: valid HWND of our own window.
+            let _ = unsafe { SetForegroundWindow(h) };
+        },
+    );
 }
 
 pub fn unfocus_overlay(app: &AppHandle) {
-    let Some(win) = app.get_webview_window(OVERLAY_LABEL) else { return };
+    let Some(win) = app.get_webview_window(OVERLAY_LABEL) else {
+        return;
+    };
     with_toolwindow(&win, |w| drop(w.set_focusable(false)), |_| {});
 }

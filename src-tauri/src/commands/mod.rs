@@ -11,7 +11,10 @@ use crate::domain::calc::{DayCalc, Grouping, WeekReport};
 use crate::domain::{Entry, Ms, Project, Settings};
 use crate::export::{self, ExportFormat};
 use crate::i18n::{fill, Lang};
-use crate::tracker::{AbsenceResolution, ClosedEntry, DeletedProject, ProjectUsage, Tracker, TrackerError, TrackerSnapshot};
+use crate::tracker::{
+    AbsenceResolution, ClosedEntry, DeletedProject, ProjectUsage, Tracker, TrackerError,
+    TrackerSnapshot,
+};
 use crate::tray;
 use crate::window::{self, HitRect, OverlayConfig, OverlayState};
 
@@ -22,7 +25,10 @@ pub struct AppState {
 
 impl AppState {
     pub fn new(tracker: Tracker) -> Self {
-        Self { tracker: Mutex::new(tracker), quit_done: AtomicBool::new(false) }
+        Self {
+            tracker: Mutex::new(tracker),
+            quit_done: AtomicBool::new(false),
+        }
     }
 
     pub fn lock(&self) -> MutexGuard<'_, Tracker> {
@@ -39,7 +45,8 @@ impl AppState {
 
 /// The resolved UI language. Takes the lock: never call while holding it.
 pub fn current_lang(app: &AppHandle) -> Lang {
-    app.try_state::<AppState>().map_or_else(crate::i18n::system_lang, |s| s.lock().lang())
+    app.try_state::<AppState>()
+        .map_or_else(crate::i18n::system_lang, |s| s.lock().lang())
 }
 
 /// Pushes the current language to the tray, the window titles and every webview
@@ -62,11 +69,15 @@ pub struct DayDto {
 }
 
 pub fn day_dto(t: &Tracker, day: NaiveDate, now: Ms) -> Result<DayDto, TrackerError> {
-    Ok(DayDto { day: t.day_calc(&Local, day, now)?, projects: t.projects()? })
+    Ok(DayDto {
+        day: t.day_calc(&Local, day, now)?,
+        projects: t.projects()?,
+    })
 }
 
 fn parse_date(s: &str, lang: Lang) -> Result<NaiveDate, String> {
-    NaiveDate::parse_from_str(s, "%Y-%m-%d").map_err(|_| fill(lang.strings().err_invalid_date, &[s]))
+    NaiveDate::parse_from_str(s, "%Y-%m-%d")
+        .map_err(|_| fill(lang.strings().err_invalid_date, &[s]))
 }
 
 fn parse_grouping(s: &str, lang: Lang) -> Result<Grouping, String> {
@@ -127,7 +138,8 @@ pub fn emit_if<R>(
 #[tauri::command]
 pub fn get_snapshot(state: State<AppState>) -> Result<TrackerSnapshot, String> {
     let t = state.lock();
-    t.snapshot(&Local, now_ms()).map_err(|e| e.message(t.lang()))
+    t.snapshot(&Local, now_ms())
+        .map_err(|e| e.message(t.lang()))
 }
 
 /// The resolved UI language (`pt-BR`, `en` or `es`).
@@ -137,7 +149,11 @@ pub fn get_language(state: State<AppState>) -> Lang {
 }
 
 #[tauri::command]
-pub fn switch_project(app: AppHandle, state: State<AppState>, project_id: i64) -> Result<(), String> {
+pub fn switch_project(
+    app: AppHandle,
+    state: State<AppState>,
+    project_id: i64,
+) -> Result<(), String> {
     mutate(&app, &state, |t, now| t.switch_to(project_id, now))
 }
 
@@ -164,7 +180,9 @@ pub fn resolve_absence(
     state: State<AppState>,
     resolution: AbsenceResolution,
 ) -> Result<(), String> {
-    mutate(&app, &state, |t, now| t.resolve_absence(&Local, resolution, now))
+    mutate(&app, &state, |t, now| {
+        t.resolve_absence(&Local, resolution, now)
+    })
 }
 
 #[tauri::command]
@@ -180,11 +198,17 @@ pub fn create_project(
     client: String,
     color: String,
 ) -> Result<Project, String> {
-    mutate(&app, &state, |t, _| t.create_project(&name, &client, &color))
+    mutate(&app, &state, |t, _| {
+        t.create_project(&name, &client, &color)
+    })
 }
 
 #[tauri::command]
-pub fn update_project(app: AppHandle, state: State<AppState>, project: Project) -> Result<(), String> {
+pub fn update_project(
+    app: AppHandle,
+    state: State<AppState>,
+    project: Project,
+) -> Result<(), String> {
     mutate(&app, &state, |t, _| t.update_project(project))
 }
 
@@ -195,16 +219,28 @@ pub fn project_usage(state: State<AppState>, id: i64) -> Result<ProjectUsage, St
 }
 
 #[tauri::command]
-pub fn delete_project(app: AppHandle, state: State<AppState>, id: i64) -> Result<DeletedProject, String> {
+pub fn delete_project(
+    app: AppHandle,
+    state: State<AppState>,
+    id: i64,
+) -> Result<DeletedProject, String> {
     mutate(&app, &state, |t, now| t.delete_project(id, now))
 }
 
 #[tauri::command]
-pub fn get_week(state: State<AppState>, week_start: String, grouping: String) -> Result<WeekReport, String> {
+pub fn get_week(
+    state: State<AppState>,
+    week_start: String,
+    grouping: String,
+) -> Result<WeekReport, String> {
     let t = state.lock();
     let lang = t.lang();
-    let (ws, g) = (parse_date(&week_start, lang)?, parse_grouping(&grouping, lang)?);
-    t.week_report(&Local, ws, now_ms(), g).map_err(|e| e.message(lang))
+    let (ws, g) = (
+        parse_date(&week_start, lang)?,
+        parse_grouping(&grouping, lang)?,
+    );
+    t.week_report(&Local, ws, now_ms(), g)
+        .map_err(|e| e.message(lang))
 }
 
 #[tauri::command]
@@ -223,7 +259,9 @@ pub fn add_entry(
     start: Ms,
     end: Ms,
 ) -> Result<Entry, String> {
-    mutate(&app, &state, |t, now| t.add_entry(project_id, start, end, now))
+    mutate(&app, &state, |t, now| {
+        t.add_entry(project_id, start, end, now)
+    })
 }
 
 #[tauri::command]
@@ -235,7 +273,9 @@ pub fn update_entry(
     end: Option<Ms>,
     project_id: Option<i64>,
 ) -> Result<Entry, String> {
-    mutate(&app, &state, |t, now| t.update_entry(id, start, end, project_id, now))
+    mutate(&app, &state, |t, now| {
+        t.update_entry(id, start, end, project_id, now)
+    })
 }
 
 #[tauri::command]
@@ -267,7 +307,11 @@ pub fn get_settings(state: State<AppState>) -> Result<Settings, String> {
 }
 
 #[tauri::command]
-pub fn set_settings(app: AppHandle, state: State<AppState>, settings: Settings) -> Result<(), String> {
+pub fn set_settings(
+    app: AppHandle,
+    state: State<AppState>,
+    settings: Settings,
+) -> Result<(), String> {
     let (old, lang) = {
         let t = state.lock();
         let lang = t.lang();
@@ -311,16 +355,25 @@ pub fn export_week(
     let (content, lang) = {
         let t = state.lock();
         let lang = t.lang();
-        let (ws, g, f) = (parse_date(&week_start, lang)?, parse_grouping(&grouping, lang)?, parse_format(&format, lang)?);
-        (export::export_week(&t, &Local, ws, now_ms(), g, f, detailed, lang).map_err(|e| e.message(lang))?, lang)
+        let (ws, g, f) = (
+            parse_date(&week_start, lang)?,
+            parse_grouping(&grouping, lang)?,
+            parse_format(&format, lang)?,
+        );
+        (
+            export::export_week(&t, &Local, ws, now_ms(), g, f, detailed, lang)
+                .map_err(|e| e.message(lang))?,
+            lang,
+        )
     };
-    std::fs::write(&path, content).map_err(|e| fill(lang.strings().err_save_file, &[&e.to_string()]))
+    std::fs::write(&path, content)
+        .map_err(|e| fill(lang.strings().err_save_file, &[&e.to_string()]))
 }
 
 /// Project identity colors, same order as `PROJECT_PALETTE` in `ColorPicker.tsx`.
 pub const PROJECT_PALETTE: [&str; 12] = [
-    "#3ddc84", "#5aa9ff", "#ffb347", "#c08bff", "#ff6b8b", "#4dd6d6",
-    "#e6e04f", "#ff8f5a", "#9be15d", "#7c9cff", "#f78fb3", "#b0b0bb",
+    "#3ddc84", "#5aa9ff", "#ffb347", "#c08bff", "#ff6b8b", "#4dd6d6", "#e6e04f", "#ff8f5a",
+    "#9be15d", "#7c9cff", "#f78fb3", "#b0b0bb",
 ];
 
 pub fn palette_color(i: usize) -> &'static str {
@@ -343,7 +396,13 @@ pub fn apply_onboarding(
     let rows: Vec<(String, String, String)> = projects
         .iter()
         .enumerate()
-        .map(|(i, p)| (p.name.trim().to_string(), p.client.trim().to_string(), palette_color(i).to_string()))
+        .map(|(i, p)| {
+            (
+                p.name.trim().to_string(),
+                p.client.trim().to_string(),
+                palette_color(i).to_string(),
+            )
+        })
         .collect();
     t.finish_onboarding(&rows, start_index, now)
 }
@@ -355,7 +414,9 @@ pub async fn finish_onboarding(
     projects: Vec<OnboardingProject>,
     start_index: Option<usize>,
 ) -> Result<(), String> {
-    mutate(&app, &state, |t, now| apply_onboarding(t, &projects, start_index, now))?;
+    mutate(&app, &state, |t, now| {
+        apply_onboarding(t, &projects, start_index, now)
+    })?;
     close_onboarding(&app);
     window::expand_overlay(&app, true);
     let _ = app.emit("overlay://coach", ());
@@ -432,7 +493,10 @@ mod tests {
     }
 
     fn op(name: &str, client: &str) -> OnboardingProject {
-        OnboardingProject { name: name.into(), client: client.into() }
+        OnboardingProject {
+            name: name.into(),
+            client: client.into(),
+        }
     }
 
     #[test]
@@ -480,7 +544,10 @@ mod tests {
     fn parsers_reject_garbage() {
         let p = Lang::PtBr;
         assert!(parse_date("2026-11-09", p).is_ok());
-        assert_eq!(parse_date("09/11/2026", p), Err("Data inválida: 09/11/2026".into()));
+        assert_eq!(
+            parse_date("09/11/2026", p),
+            Err("Data inválida: 09/11/2026".into())
+        );
         assert_eq!(parse_grouping("client", p), Ok(Grouping::Client));
         assert_eq!(parse_format("pdf", p), Err("Formato inválido: pdf".into()));
     }
@@ -488,8 +555,14 @@ mod tests {
     #[test]
     fn parser_errors_per_language() {
         assert_eq!(parse_date("x", Lang::En), Err("Invalid date: x".into()));
-        assert_eq!(parse_grouping("x", Lang::Es), Err("Agrupación inválida: x".into()));
-        assert_eq!(parse_format("pdf", Lang::En), Err("Invalid format: pdf".into()));
+        assert_eq!(
+            parse_grouping("x", Lang::Es),
+            Err("Agrupación inválida: x".into())
+        );
+        assert_eq!(
+            parse_format("pdf", Lang::En),
+            Err("Invalid format: pdf".into())
+        );
     }
 
     #[test]

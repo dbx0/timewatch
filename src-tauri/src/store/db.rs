@@ -64,7 +64,9 @@ impl Db {
     }
 
     fn migrate(&self) -> Result<(), StoreError> {
-        let v: i64 = self.conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+        let v: i64 = self
+            .conn
+            .query_row("PRAGMA user_version", [], |r| r.get(0))?;
         if v < 1 {
             let tx = self.conn.unchecked_transaction()?;
             tx.execute_batch(SCHEMA_V1)?;
@@ -92,7 +94,10 @@ mod tests {
     #[test]
     fn migrates_fresh_db() {
         let db = Db::open_in_memory().unwrap();
-        let v: i64 = db.conn().query_row("PRAGMA user_version", [], |r| r.get(0)).unwrap();
+        let v: i64 = db
+            .conn()
+            .query_row("PRAGMA user_version", [], |r| r.get(0))
+            .unwrap();
         assert_eq!(v, 2);
     }
 
@@ -106,13 +111,22 @@ mod tests {
             [],
         )
         .unwrap();
-        conn.execute("INSERT INTO entries(id, project_id, start, \"end\") VALUES (7, 1, 10, 20)", []).unwrap();
+        conn.execute(
+            "INSERT INTO entries(id, project_id, start, \"end\") VALUES (7, 1, 10, 20)",
+            [],
+        )
+        .unwrap();
         let db = Db::init(conn).unwrap();
-        let v: i64 = db.conn().query_row("PRAGMA user_version", [], |r| r.get(0)).unwrap();
+        let v: i64 = db
+            .conn()
+            .query_row("PRAGMA user_version", [], |r| r.get(0))
+            .unwrap();
         assert_eq!(v, 2);
         let (start, note): (i64, Option<String>) = db
             .conn()
-            .query_row("SELECT start, note FROM entries WHERE id = 7", [], |r| Ok((r.get(0)?, r.get(1)?)))
+            .query_row("SELECT start, note FROM entries WHERE id = 7", [], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
             .unwrap();
         assert_eq!((start, note), (10, None));
     }
@@ -124,7 +138,10 @@ mod tests {
         let path = dir.join("t.db");
         drop(Db::open(&path).unwrap());
         let db = Db::open(&path).unwrap();
-        let v: i64 = db.conn().query_row("PRAGMA user_version", [], |r| r.get(0)).unwrap();
+        let v: i64 = db
+            .conn()
+            .query_row("PRAGMA user_version", [], |r| r.get(0))
+            .unwrap();
         assert_eq!(v, 2);
         std::fs::remove_dir_all(&dir).ok();
     }

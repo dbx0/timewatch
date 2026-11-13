@@ -111,7 +111,10 @@ pub fn day_calc<Tz: TimeZone>(
             Some(i) => {
                 let ms = lens[i].min(s.lunch_min as i64 * MIN_MS);
                 lens[i] -= ms;
-                auto_lunch = Some(AutoLunch { project_id: segments[i].project_id, ms });
+                auto_lunch = Some(AutoLunch {
+                    project_id: segments[i].project_id,
+                    ms,
+                });
                 LunchStatus::Auto
             }
             None => LunchStatus::NoneRunning,
@@ -257,7 +260,14 @@ pub fn week_report<Tz: TimeZone>(
     // The exact client breaks ties before the name, so "Acme" and "acme" never interleave
     // (grouping below splits on exact client equality).
     per_project.sort_by(|a, b| {
-        let key = |p: &Project| (p.client.to_lowercase(), p.client.clone(), p.name.to_lowercase(), p.name.clone());
+        let key = |p: &Project| {
+            (
+                p.client.to_lowercase(),
+                p.client.clone(),
+                p.name.to_lowercase(),
+                p.name.clone(),
+            )
+        };
         key(a.0).cmp(&key(b.0))
     });
 
@@ -350,10 +360,20 @@ mod tests {
         at(&tz(), day, nt)
     }
     fn e(id: i64, p: i64, s: Ms, en: Option<Ms>) -> Entry {
-        Entry { id, project_id: p, start: s, end: en, note: None }
+        Entry {
+            id,
+            project_id: p,
+            start: s,
+            end: en,
+            note: None,
+        }
     }
     fn lunch(day: NaiveDate, s: &str, en: &str) -> Lunch {
-        Lunch { day, start: t_on(day, s), end: t_on(day, en) }
+        Lunch {
+            day,
+            start: t_on(day, s),
+            end: t_on(day, en),
+        }
     }
     fn today_after() -> NaiveDate {
         d(2026, 11, 20)
@@ -376,11 +396,37 @@ mod tests {
             e(3, 3, t("15:00"), Some(t("19:20"))),
         ];
         let l = vec![lunch(day(), "12:00", "13:00")];
-        let c = day_calc(&tz(), day(), today_after(), &entries, &l, &Settings::default(), t("23:00"));
+        let c = day_calc(
+            &tz(),
+            day(),
+            today_after(),
+            &entries,
+            &l,
+            &Settings::default(),
+            t("23:00"),
+        );
         assert_eq!(c.lunch_status, LunchStatus::Marked);
-        assert_eq!(c.per_project[&1], ProjectDay { normal_ms: 3 * H + 10 * M, extra_ms: 0 });
-        assert_eq!(c.per_project[&2], ProjectDay { normal_ms: 2 * H, extra_ms: 0 });
-        assert_eq!(c.per_project[&3], ProjectDay { normal_ms: 2 * H + 50 * M, extra_ms: 90 * M });
+        assert_eq!(
+            c.per_project[&1],
+            ProjectDay {
+                normal_ms: 3 * H + 10 * M,
+                extra_ms: 0
+            }
+        );
+        assert_eq!(
+            c.per_project[&2],
+            ProjectDay {
+                normal_ms: 2 * H,
+                extra_ms: 0
+            }
+        );
+        assert_eq!(
+            c.per_project[&3],
+            ProjectDay {
+                normal_ms: 2 * H + 50 * M,
+                extra_ms: 90 * M
+            }
+        );
         assert_eq!(c.jornada_ms, 8 * H);
         assert!(!c.is_holiday);
     }
@@ -394,9 +440,23 @@ mod tests {
 
     #[test]
     fn auto_lunch_deducts_from_project_running_at_ref() {
-        let c = day_calc(&tz(), day(), today_after(), &lunch_entries(), &[], &Settings::default(), t("23:00"));
+        let c = day_calc(
+            &tz(),
+            day(),
+            today_after(),
+            &lunch_entries(),
+            &[],
+            &Settings::default(),
+            t("23:00"),
+        );
         assert_eq!(c.lunch_status, LunchStatus::Auto);
-        assert_eq!(c.auto_lunch, Some(AutoLunch { project_id: 1, ms: H }));
+        assert_eq!(
+            c.auto_lunch,
+            Some(AutoLunch {
+                project_id: 1,
+                ms: H
+            })
+        );
         let a = c.per_project[&1];
         assert_eq!(a.normal_ms + a.extra_ms, 7 * H + 30 * M);
         assert_eq!(c.lunch, None);
@@ -404,7 +464,15 @@ mod tests {
 
     #[test]
     fn no_auto_lunch_today() {
-        let c = day_calc(&tz(), day(), day(), &lunch_entries(), &[], &Settings::default(), t("23:00"));
+        let c = day_calc(
+            &tz(),
+            day(),
+            day(),
+            &lunch_entries(),
+            &[],
+            &Settings::default(),
+            t("23:00"),
+        );
         assert_eq!(c.lunch_status, LunchStatus::Pending);
         assert_eq!(c.auto_lunch, None);
         let a = c.per_project[&1];
@@ -417,17 +485,36 @@ mod tests {
             e(1, 1, t("09:00"), Some(t("11:00"))),
             e(2, 2, t("13:00"), Some(t("18:00"))),
         ];
-        let c = day_calc(&tz(), day(), today_after(), &entries, &[], &Settings::default(), t("23:00"));
+        let c = day_calc(
+            &tz(),
+            day(),
+            today_after(),
+            &entries,
+            &[],
+            &Settings::default(),
+            t("23:00"),
+        );
         assert_eq!(c.lunch_status, LunchStatus::NoneRunning);
         assert_eq!(c.auto_lunch, None);
         assert_eq!(c.per_project[&1].normal_ms, 2 * H);
-        assert_eq!(c.per_project[&2].normal_ms + c.per_project[&2].extra_ms, 5 * H);
+        assert_eq!(
+            c.per_project[&2].normal_ms + c.per_project[&2].extra_ms,
+            5 * H
+        );
     }
 
     #[test]
     fn marked_lunch_prevents_auto() {
         let l = vec![lunch(day(), "12:00", "12:45")];
-        let c = day_calc(&tz(), day(), today_after(), &lunch_entries(), &l, &Settings::default(), t("23:00"));
+        let c = day_calc(
+            &tz(),
+            day(),
+            today_after(),
+            &lunch_entries(),
+            &l,
+            &Settings::default(),
+            t("23:00"),
+        );
         assert_eq!(c.lunch_status, LunchStatus::Marked);
         assert_eq!(c.auto_lunch, None);
         assert_eq!(c.lunch, Some(l[0].clone()));
@@ -439,7 +526,15 @@ mod tests {
     fn lunch_disabled_when_zero_minutes() {
         let mut s = Settings::default();
         s.lunch_min = 0;
-        let c = day_calc(&tz(), day(), today_after(), &lunch_entries(), &[], &s, t("23:00"));
+        let c = day_calc(
+            &tz(),
+            day(),
+            today_after(),
+            &lunch_entries(),
+            &[],
+            &s,
+            t("23:00"),
+        );
         assert_eq!(c.lunch_status, LunchStatus::Disabled);
         assert_eq!(c.auto_lunch, None);
     }
@@ -447,9 +542,26 @@ mod tests {
     #[test]
     fn auto_lunch_capped_by_segment_length() {
         let entries = vec![e(1, 1, t("11:50"), Some(t("12:20")))];
-        let c = day_calc(&tz(), day(), today_after(), &entries, &[], &Settings::default(), t("23:00"));
-        assert_eq!(c.auto_lunch, Some(AutoLunch { project_id: 1, ms: 30 * M }));
-        assert_eq!(c.per_project.get(&1).map(|p| p.normal_ms + p.extra_ms), Some(0));
+        let c = day_calc(
+            &tz(),
+            day(),
+            today_after(),
+            &entries,
+            &[],
+            &Settings::default(),
+            t("23:00"),
+        );
+        assert_eq!(
+            c.auto_lunch,
+            Some(AutoLunch {
+                project_id: 1,
+                ms: 30 * M
+            })
+        );
+        assert_eq!(
+            c.per_project.get(&1).map(|p| p.normal_ms + p.extra_ms),
+            Some(0)
+        );
     }
 
     #[test]
@@ -458,18 +570,46 @@ mod tests {
         let entries = vec![e(1, 1, t_on(sat, "10:00"), Some(t_on(sat, "12:30")))];
         let mut s0 = Settings::default();
         s0.lunch_min = 0;
-        let c = day_calc(&tz(), sat, today_after(), &entries, &[], &s0, t_on(sat, "23:00"));
+        let c = day_calc(
+            &tz(),
+            sat,
+            today_after(),
+            &entries,
+            &[],
+            &s0,
+            t_on(sat, "23:00"),
+        );
         assert_eq!(c.jornada_ms, 0);
-        assert_eq!(c.per_project[&1], ProjectDay { normal_ms: 0, extra_ms: 2 * H + 30 * M });
+        assert_eq!(
+            c.per_project[&1],
+            ProjectDay {
+                normal_ms: 0,
+                extra_ms: 2 * H + 30 * M
+            }
+        );
 
         let mon = d(2026, 11, 9);
         let mut s = Settings::default();
         s.lunch_min = 0;
         s.holidays.push(mon);
         let entries = vec![e(1, 1, t_on(mon, "10:00"), Some(t_on(mon, "12:30")))];
-        let c = day_calc(&tz(), mon, today_after(), &entries, &[], &s, t_on(mon, "23:00"));
+        let c = day_calc(
+            &tz(),
+            mon,
+            today_after(),
+            &entries,
+            &[],
+            &s,
+            t_on(mon, "23:00"),
+        );
         assert!(c.is_holiday);
-        assert_eq!(c.per_project[&1], ProjectDay { normal_ms: 0, extra_ms: 2 * H + 30 * M });
+        assert_eq!(
+            c.per_project[&1],
+            ProjectDay {
+                normal_ms: 0,
+                extra_ms: 2 * H + 30 * M
+            }
+        );
     }
 
     #[test]
@@ -479,8 +619,24 @@ mod tests {
         let entries = vec![e(1, 1, t_on(d1, "22:00"), Some(t_on(d2, "01:30")))];
         let mut s = Settings::default();
         s.lunch_min = 0;
-        let c1 = day_calc(&tz(), d1, today_after(), &entries, &[], &s, t_on(d2, "09:00"));
-        let c2 = day_calc(&tz(), d2, today_after(), &entries, &[], &s, t_on(d2, "09:00"));
+        let c1 = day_calc(
+            &tz(),
+            d1,
+            today_after(),
+            &entries,
+            &[],
+            &s,
+            t_on(d2, "09:00"),
+        );
+        let c2 = day_calc(
+            &tz(),
+            d2,
+            today_after(),
+            &entries,
+            &[],
+            &s,
+            t_on(d2, "09:00"),
+        );
         assert_eq!(c1.per_project[&1].normal_ms, 2 * H);
         assert_eq!(c2.per_project[&1].normal_ms, 90 * M);
         assert_eq!(c1.segments.len(), 1);
@@ -539,16 +695,42 @@ mod tests {
             e(1, 1, t_on(mon(), "09:00"), Some(t_on(mon(), "10:07"))),
             e(2, 2, t_on(mon(), "10:07"), Some(t_on(mon(), "11:14"))),
         ];
-        let r = week_report(&tz(), mon(), today_after(), &projects, &entries, &[], &s, t("23:00"), Grouping::Project);
+        let r = week_report(
+            &tz(),
+            mon(),
+            today_after(),
+            &projects,
+            &entries,
+            &[],
+            &s,
+            t("23:00"),
+            Grouping::Project,
+        );
         // header + 2 data rows
         assert_eq!(r.rows.len(), 3);
         assert_eq!(r.rows[0].kind, RowKind::ClientHeader);
         assert_eq!(r.rows[0].project_count, 0);
-        assert_eq!(r.rows[0].total, Cell { total_ms: 0, extra_ms: 0 });
+        assert_eq!(
+            r.rows[0].total,
+            Cell {
+                total_ms: 0,
+                extra_ms: 0
+            }
+        );
         assert_eq!(r.rows[1].cells[0].total_ms, H);
         assert_eq!(r.rows[2].cells[0].total_ms, H);
 
-        let r = week_report(&tz(), mon(), today_after(), &projects, &entries, &[], &s, t("23:00"), Grouping::Client);
+        let r = week_report(
+            &tz(),
+            mon(),
+            today_after(),
+            &projects,
+            &entries,
+            &[],
+            &s,
+            t("23:00"),
+            Grouping::Client,
+        );
         assert_eq!(r.rows.len(), 1);
         assert_eq!(r.rows[0].kind, RowKind::Data);
         assert_eq!(r.rows[0].label, "X");
@@ -561,7 +743,12 @@ mod tests {
     #[test]
     fn week_totals_and_expected() {
         let s = Settings::default();
-        let projects = vec![proj(1, "Zed", "B"), proj(2, "Alpha", "A"), proj(3, "Idle", "A"), proj(4, "Beta", "A")];
+        let projects = vec![
+            proj(1, "Zed", "B"),
+            proj(2, "Alpha", "A"),
+            proj(3, "Idle", "A"),
+            proj(4, "Beta", "A"),
+        ];
         let tue = d(2026, 11, 10);
         let entries = vec![
             e(1, 1, t_on(mon(), "09:00"), Some(t_on(mon(), "11:00"))),
@@ -569,7 +756,17 @@ mod tests {
             e(3, 4, t_on(tue, "20:00"), Some(t_on(tue, "21:00"))),
             e(4, 2, t_on(mon(), "13:00"), Some(t_on(mon(), "14:00"))),
         ];
-        let r = week_report(&tz(), mon(), today_after(), &projects, &entries, &[], &s, t("23:00"), Grouping::Project);
+        let r = week_report(
+            &tz(),
+            mon(),
+            today_after(),
+            &projects,
+            &entries,
+            &[],
+            &s,
+            t("23:00"),
+            Grouping::Project,
+        );
         assert_eq!(r.week_start, mon());
         assert_eq!(r.days[6], d(2026, 11, 15));
         assert_eq!(r.expected_ms, 40 * H);
@@ -594,8 +791,20 @@ mod tests {
         let extra_sum: i64 = data.iter().map(|x| x.total.extra_ms).sum();
         assert_eq!(r.total.extra_ms, extra_sum);
         // Tuesday: Alpha 09:00-20:00 = 11h minus 1h auto lunch = 10h => 8h normal + 2h extra; Beta 1h extra.
-        assert_eq!(r.col_totals[1], Cell { total_ms: 11 * H, extra_ms: 3 * H });
-        assert_eq!(r.rows[1].cells[1], Cell { total_ms: 10 * H, extra_ms: 2 * H });
+        assert_eq!(
+            r.col_totals[1],
+            Cell {
+                total_ms: 11 * H,
+                extra_ms: 3 * H
+            }
+        );
+        assert_eq!(
+            r.rows[1].cells[1],
+            Cell {
+                total_ms: 10 * H,
+                extra_ms: 2 * H
+            }
+        );
         assert_eq!(r.col_totals[0].total_ms, 3 * H);
         assert_eq!(r.holidays, [false; 7]);
     }
@@ -603,13 +812,27 @@ mod tests {
     #[test]
     fn case_variant_clients_stay_grouped() {
         let s = Settings::default();
-        let projects = vec![proj(1, "Alpha", "Acme"), proj(2, "Beta", "acme"), proj(3, "Gamma", "Acme")];
+        let projects = vec![
+            proj(1, "Alpha", "Acme"),
+            proj(2, "Beta", "acme"),
+            proj(3, "Gamma", "Acme"),
+        ];
         let entries = vec![
             e(1, 1, t_on(mon(), "09:00"), Some(t_on(mon(), "10:00"))),
             e(2, 2, t_on(mon(), "10:00"), Some(t_on(mon(), "11:00"))),
             e(3, 3, t_on(mon(), "11:00"), Some(t_on(mon(), "12:00"))),
         ];
-        let r = week_report(&tz(), mon(), today_after(), &projects, &entries, &[], &s, t("23:00"), Grouping::Project);
+        let r = week_report(
+            &tz(),
+            mon(),
+            today_after(),
+            &projects,
+            &entries,
+            &[],
+            &s,
+            t("23:00"),
+            Grouping::Project,
+        );
         let labels: Vec<_> = r.rows.iter().map(|x| (x.kind, x.label.as_str())).collect();
         assert_eq!(
             labels,
@@ -627,7 +850,17 @@ mod tests {
     fn week_marks_holidays() {
         let mut s = Settings::default();
         s.holidays.push(d(2026, 11, 11));
-        let r = week_report(&tz(), mon(), today_after(), &[], &[], &[], &s, t("23:00"), Grouping::Client);
+        let r = week_report(
+            &tz(),
+            mon(),
+            today_after(),
+            &[],
+            &[],
+            &[],
+            &s,
+            t("23:00"),
+            Grouping::Client,
+        );
         assert_eq!(r.holidays, [false, false, true, false, false, false, false]);
         assert_eq!(r.expected_ms, 32 * H);
         assert!(r.rows.is_empty());
@@ -635,8 +868,17 @@ mod tests {
 
     #[test]
     fn serde_enum_names() {
-        assert_eq!(serde_json::to_string(&LunchStatus::NoneRunning).unwrap(), "\"noneRunning\"");
-        assert_eq!(serde_json::to_string(&RowKind::ClientHeader).unwrap(), "\"clientHeader\"");
-        assert_eq!(serde_json::to_string(&Grouping::Client).unwrap(), "\"client\"");
+        assert_eq!(
+            serde_json::to_string(&LunchStatus::NoneRunning).unwrap(),
+            "\"noneRunning\""
+        );
+        assert_eq!(
+            serde_json::to_string(&RowKind::ClientHeader).unwrap(),
+            "\"clientHeader\""
+        );
+        assert_eq!(
+            serde_json::to_string(&Grouping::Client).unwrap(),
+            "\"client\""
+        );
     }
 }

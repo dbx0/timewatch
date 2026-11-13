@@ -27,7 +27,13 @@ fn project_from(r: &Row) -> rusqlite::Result<Project> {
 }
 
 fn entry_from(r: &Row) -> rusqlite::Result<Entry> {
-    Ok(Entry { id: r.get(0)?, project_id: r.get(1)?, start: r.get(2)?, end: r.get(3)?, note: r.get(4)? })
+    Ok(Entry {
+        id: r.get(0)?,
+        project_id: r.get(1)?,
+        start: r.get(2)?,
+        end: r.get(3)?,
+        note: r.get(4)?,
+    })
 }
 
 pub fn insert_project(db: &Db, name: &str, client: &str, color: &str) -> Result<Project> {
@@ -64,7 +70,8 @@ pub fn put_project(db: &Db, p: &Project) -> Result<()> {
 }
 
 pub fn delete_project(db: &Db, id: i64) -> Result<()> {
-    db.conn().execute("DELETE FROM projects WHERE id = ?1", params![id])?;
+    db.conn()
+        .execute("DELETE FROM projects WHERE id = ?1", params![id])?;
     Ok(())
 }
 
@@ -73,19 +80,27 @@ pub fn entries_of_project(db: &Db, project_id: i64) -> Result<Vec<Entry>> {
     let mut st = db.conn().prepare(
         "SELECT id, project_id, start, \"end\", note FROM entries WHERE project_id = ?1 ORDER BY start, id",
     )?;
-    let rows = st.query_map(params![project_id], entry_from)?.collect::<rusqlite::Result<Vec<_>>>()?;
+    let rows = st
+        .query_map(params![project_id], entry_from)?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
     Ok(rows)
 }
 
 pub fn delete_entries_of_project(db: &Db, project_id: i64) -> Result<()> {
-    db.conn().execute("DELETE FROM entries WHERE project_id = ?1", params![project_id])?;
+    db.conn().execute(
+        "DELETE FROM entries WHERE project_id = ?1",
+        params![project_id],
+    )?;
     Ok(())
 }
 
 pub fn list_projects(db: &Db) -> Result<Vec<Project>> {
-    let mut st =
-        db.conn().prepare("SELECT id, name, client, color, archived FROM projects ORDER BY id")?;
-    let rows = st.query_map([], project_from)?.collect::<rusqlite::Result<Vec<_>>>()?;
+    let mut st = db
+        .conn()
+        .prepare("SELECT id, name, client, color, archived FROM projects ORDER BY id")?;
+    let rows = st
+        .query_map([], project_from)?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
     Ok(rows)
 }
 
@@ -94,7 +109,13 @@ pub fn insert_entry(db: &Db, project_id: i64, start: Ms, end: Option<Ms>) -> Res
         "INSERT INTO entries(project_id, start, \"end\") VALUES (?1, ?2, ?3)",
         params![project_id, start, end],
     )?;
-    Ok(Entry { id: db.conn().last_insert_rowid(), project_id, start, end, note: None })
+    Ok(Entry {
+        id: db.conn().last_insert_rowid(),
+        project_id,
+        start,
+        end,
+        note: None,
+    })
 }
 
 pub fn update_entry(db: &Db, e: &Entry) -> Result<()> {
@@ -120,7 +141,10 @@ pub fn put_entry(db: &Db, e: &Entry) -> Result<()> {
 
 /// Sets (or clears) an entry's note. Returns false when no row has that id.
 pub fn set_entry_note(db: &Db, id: i64, note: Option<&str>) -> Result<bool> {
-    Ok(db.conn().execute("UPDATE entries SET note = ?2 WHERE id = ?1", params![id, note])? > 0)
+    Ok(db.conn().execute(
+        "UPDATE entries SET note = ?2 WHERE id = ?1",
+        params![id, note],
+    )? > 0)
 }
 
 /// Project ids ordered by their latest activity (`COALESCE(end, now)`), most recent first.
@@ -129,12 +153,15 @@ pub fn recent_project_ids(db: &Db, now: Ms) -> Result<Vec<i64>> {
         "SELECT project_id, MAX(COALESCE(\"end\", ?1)) AS last FROM entries
          GROUP BY project_id ORDER BY last DESC, project_id DESC",
     )?;
-    let rows = st.query_map(params![now], |r| r.get(0))?.collect::<rusqlite::Result<Vec<i64>>>()?;
+    let rows = st
+        .query_map(params![now], |r| r.get(0))?
+        .collect::<rusqlite::Result<Vec<i64>>>()?;
     Ok(rows)
 }
 
 pub fn delete_entry(db: &Db, id: i64) -> Result<()> {
-    db.conn().execute("DELETE FROM entries WHERE id = ?1", params![id])?;
+    db.conn()
+        .execute("DELETE FROM entries WHERE id = ?1", params![id])?;
     Ok(())
 }
 
@@ -167,7 +194,9 @@ pub fn entries_between(db: &Db, from: Ms, to: Ms) -> Result<Vec<Entry>> {
          WHERE start < ?2 AND (\"end\" IS NULL OR \"end\" > ?1)
          ORDER BY start, id",
     )?;
-    let rows = st.query_map(params![from, to], entry_from)?.collect::<rusqlite::Result<Vec<_>>>()?;
+    let rows = st
+        .query_map(params![from, to], entry_from)?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
     Ok(rows)
 }
 
@@ -176,7 +205,9 @@ pub fn last_entries(db: &Db, limit: usize) -> Result<Vec<Entry>> {
         "SELECT id, project_id, start, \"end\", note FROM entries
          ORDER BY COALESCE(\"end\", start) DESC, id DESC LIMIT ?1",
     )?;
-    let rows = st.query_map(params![limit as i64], entry_from)?.collect::<rusqlite::Result<Vec<_>>>()?;
+    let rows = st
+        .query_map(params![limit as i64], entry_from)?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
     Ok(rows)
 }
 
@@ -190,7 +221,10 @@ pub fn upsert_lunch(db: &Db, l: &Lunch) -> Result<()> {
 }
 
 pub fn delete_lunch(db: &Db, day: NaiveDate) -> Result<()> {
-    db.conn().execute("DELETE FROM lunches WHERE day = ?1", params![day.format(DAY_FMT).to_string()])?;
+    db.conn().execute(
+        "DELETE FROM lunches WHERE day = ?1",
+        params![day.format(DAY_FMT).to_string()],
+    )?;
     Ok(())
 }
 
@@ -201,13 +235,24 @@ pub fn lunches_between(db: &Db, from: NaiveDate, to: NaiveDate) -> Result<Vec<Lu
     )?;
     let rows = st
         .query_map(
-            params![from.format(DAY_FMT).to_string(), to.format(DAY_FMT).to_string()],
+            params![
+                from.format(DAY_FMT).to_string(),
+                to.format(DAY_FMT).to_string()
+            ],
             |r| {
                 let day: String = r.get(0)?;
                 let day = NaiveDate::parse_from_str(&day, DAY_FMT).map_err(|e| {
-                    rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
+                    rusqlite::Error::FromSqlConversionFailure(
+                        0,
+                        rusqlite::types::Type::Text,
+                        Box::new(e),
+                    )
                 })?;
-                Ok(Lunch { day, start: r.get(1)?, end: r.get(2)? })
+                Ok(Lunch {
+                    day,
+                    start: r.get(1)?,
+                    end: r.get(2)?,
+                })
             },
         )?
         .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -217,7 +262,9 @@ pub fn lunches_between(db: &Db, from: NaiveDate, to: NaiveDate) -> Result<Vec<Lu
 pub fn get_meta<T: DeserializeOwned>(db: &Db, key: &str) -> Result<Option<T>> {
     let raw: Option<String> = db
         .conn()
-        .query_row("SELECT value FROM meta WHERE key = ?1", params![key], |r| r.get(0))
+        .query_row("SELECT value FROM meta WHERE key = ?1", params![key], |r| {
+            r.get(0)
+        })
         .optional()?;
     match raw {
         Some(s) => Ok(Some(serde_json::from_str(&s)?)),
@@ -236,7 +283,8 @@ pub fn set_meta<T: Serialize>(db: &Db, key: &str, value: &T) -> Result<()> {
 }
 
 pub fn del_meta(db: &Db, key: &str) -> Result<()> {
-    db.conn().execute("DELETE FROM meta WHERE key = ?1", params![key])?;
+    db.conn()
+        .execute("DELETE FROM meta WHERE key = ?1", params![key])?;
     Ok(())
 }
 
@@ -306,11 +354,22 @@ mod tests {
         assert_eq!(a.note, None);
         assert!(set_entry_note(&db, a.id, Some("fiz X")).unwrap());
         assert!(!set_entry_note(&db, 999, Some("x")).unwrap());
-        assert_eq!(get_entry(&db, a.id).unwrap().unwrap().note.as_deref(), Some("fiz X"));
+        assert_eq!(
+            get_entry(&db, a.id).unwrap().unwrap().note.as_deref(),
+            Some("fiz X")
+        );
         // editing times (and undo's put_entry over an existing row) keeps the current note
         a.end = Some(25);
         update_entry(&db, &a).unwrap();
-        put_entry(&db, &Entry { end: Some(30), note: None, ..a.clone() }).unwrap();
+        put_entry(
+            &db,
+            &Entry {
+                end: Some(30),
+                note: None,
+                ..a.clone()
+            },
+        )
+        .unwrap();
         let got = get_entry(&db, a.id).unwrap().unwrap();
         assert_eq!((got.end, got.note.as_deref()), (Some(30), Some("fiz X")));
         // re-inserting a deleted row (undo of delete) brings its note back
@@ -326,11 +385,23 @@ mod tests {
     fn lunch_upsert_range_delete() {
         let db = Db::open_in_memory().unwrap();
         let d = |n| NaiveDate::from_ymd_opt(2026, 11, n).unwrap();
-        let mut l = Lunch { day: d(10), start: 1, end: 2 };
+        let mut l = Lunch {
+            day: d(10),
+            start: 1,
+            end: 2,
+        };
         upsert_lunch(&db, &l).unwrap();
         l.end = 3;
         upsert_lunch(&db, &l).unwrap();
-        upsert_lunch(&db, &Lunch { day: d(12), start: 5, end: 6 }).unwrap();
+        upsert_lunch(
+            &db,
+            &Lunch {
+                day: d(12),
+                start: 5,
+                end: 6,
+            },
+        )
+        .unwrap();
         assert_eq!(lunches_between(&db, d(10), d(11)).unwrap(), vec![l.clone()]);
         assert_eq!(lunches_between(&db, d(10), d(12)).unwrap().len(), 2);
         delete_lunch(&db, d(10)).unwrap();

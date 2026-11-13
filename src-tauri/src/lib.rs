@@ -56,7 +56,10 @@ pub fn run() {
                 })
                 .build(),
         )
-        .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, None))
+        .plugin(tauri_plugin_autostart::init(
+            MacosLauncher::LaunchAgent,
+            None,
+        ))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init());
     let app = platform::register(builder)
@@ -128,20 +131,28 @@ pub fn run() {
 
     app.run(|app, event| {
         match &event {
-            RunEvent::WindowEvent { label, event: WindowEvent::Destroyed, .. } => {
+            RunEvent::WindowEvent {
+                label,
+                event: WindowEvent::Destroyed,
+                ..
+            } => {
                 window::sync_activation_policy(app, Some(label));
             }
             // Alt+F4 / ⌘W (default macOS Window menu) on the overlay: keep the pill alive.
-            RunEvent::WindowEvent { label, event: WindowEvent::CloseRequested { api, .. }, .. }
-                if window::blocks_close(label) =>
-            {
+            RunEvent::WindowEvent {
+                label,
+                event: WindowEvent::CloseRequested { api, .. },
+                ..
+            } if window::blocks_close(label) => {
                 api.prevent_close();
             }
             _ => {}
         }
         let quitting = match &event {
             // Last normal window closed (`code` None): keep running in the background.
-            RunEvent::ExitRequested { code: None, api, .. } => {
+            RunEvent::ExitRequested {
+                code: None, api, ..
+            } => {
                 api.prevent_exit();
                 false
             }

@@ -43,7 +43,12 @@ impl LanguagePref {
 impl Lang {
     /// `pt*` -> pt-BR, `es*` -> es, anything else (including `en*`) -> en.
     pub fn from_locale(tag: &str) -> Lang {
-        let primary = tag.trim().split(['-', '_', '.', '@']).next().unwrap_or("").to_ascii_lowercase();
+        let primary = tag
+            .trim()
+            .split(['-', '_', '.', '@'])
+            .next()
+            .unwrap_or("")
+            .to_ascii_lowercase();
         match primary.as_str() {
             "pt" => Lang::PtBr,
             "es" => Lang::Es,
@@ -214,8 +219,17 @@ pub static PT_BR: Strings = Strings {
     day_names: ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"],
     date_fmt: "%d/%m/%Y",
     short_date_fmt: "%d/%m",
-    csv_summary_header: ["data", "cliente", "projeto", "horas_normais", "horas_extras", "horas_total"],
-    csv_detailed_header: ["data", "cliente", "projeto", "inicio", "fim", "horas", "nota"],
+    csv_summary_header: [
+        "data",
+        "cliente",
+        "projeto",
+        "horas_normais",
+        "horas_extras",
+        "horas_total",
+    ],
+    csv_detailed_header: [
+        "data", "cliente", "projeto", "inicio", "fim", "horas", "nota",
+    ],
 };
 
 pub static EN: Strings = Strings {
@@ -265,7 +279,14 @@ pub static EN: Strings = Strings {
     day_names: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
     date_fmt: "%m/%d/%Y",
     short_date_fmt: "%m/%d",
-    csv_summary_header: ["date", "client", "project", "regular_hours", "overtime_hours", "total_hours"],
+    csv_summary_header: [
+        "date",
+        "client",
+        "project",
+        "regular_hours",
+        "overtime_hours",
+        "total_hours",
+    ],
     csv_detailed_header: ["date", "client", "project", "start", "end", "hours", "note"],
 };
 
@@ -316,8 +337,17 @@ pub static ES: Strings = Strings {
     day_names: ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"],
     date_fmt: "%d/%m/%Y",
     short_date_fmt: "%d/%m",
-    csv_summary_header: ["fecha", "cliente", "proyecto", "horas_normales", "horas_extra", "horas_total"],
-    csv_detailed_header: ["fecha", "cliente", "proyecto", "inicio", "fin", "horas", "nota"],
+    csv_summary_header: [
+        "fecha",
+        "cliente",
+        "proyecto",
+        "horas_normales",
+        "horas_extra",
+        "horas_total",
+    ],
+    csv_detailed_header: [
+        "fecha", "cliente", "proyecto", "inicio", "fin", "horas", "nota",
+    ],
 };
 
 #[cfg(test)]
@@ -361,8 +391,14 @@ mod tests {
         assert_eq!(to_value(Lang::En).unwrap(), json!("en"));
         assert_eq!(to_value(Lang::Es).unwrap(), json!("es"));
         assert_eq!(to_value(LanguagePref::System).unwrap(), json!("system"));
-        assert_eq!(from_value::<LanguagePref>(json!("pt-BR")).unwrap(), LanguagePref::PtBr);
-        assert_eq!(from_value::<LanguagePref>(json!("es")).unwrap(), LanguagePref::Es);
+        assert_eq!(
+            from_value::<LanguagePref>(json!("pt-BR")).unwrap(),
+            LanguagePref::PtBr
+        );
+        assert_eq!(
+            from_value::<LanguagePref>(json!("es")).unwrap(),
+            LanguagePref::Es
+        );
         assert_eq!(Lang::En.code(), "en");
     }
 
@@ -388,7 +424,10 @@ mod tests {
         for l in [Lang::PtBr, Lang::En, Lang::Es] {
             let s = l.strings();
             assert_eq!(s.day_names.len(), 7);
-            assert!(s.notice_sleep.contains("{}") && s.notice_quit.contains("{}"), "{l:?}");
+            assert!(
+                s.notice_sleep.contains("{}") && s.notice_quit.contains("{}"),
+                "{l:?}"
+            );
             assert!(s.err_store.contains("{}"), "{l:?}");
         }
         assert_eq!(Lang::PtBr.strings().tray_quit, "Sair");

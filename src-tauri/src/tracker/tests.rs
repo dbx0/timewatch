@@ -30,7 +30,13 @@ fn all_entries(tr: &Tracker) -> Vec<Entry> {
 }
 
 fn e(id: i64, pid: i64, start: Ms, end: Option<Ms>) -> Entry {
-    Entry { id, project_id: pid, start, end, note: None }
+    Entry {
+        id,
+        project_id: pid,
+        start,
+        end,
+        note: None,
+    }
 }
 
 fn snap(tr: &Tracker, now: Ms) -> TrackerSnapshot {
@@ -44,8 +50,14 @@ fn switch_closes_previous_and_starts_new_session() {
     tr.switch_to(b.id, t(10, 0)).unwrap();
     let es = all_entries(&tr);
     assert_eq!(es.len(), 2);
-    assert_eq!((es[0].project_id, es[0].start, es[0].end), (a.id, t(9, 0), Some(t(10, 0))));
-    assert_eq!((es[1].project_id, es[1].start, es[1].end), (b.id, t(10, 0), None));
+    assert_eq!(
+        (es[0].project_id, es[0].start, es[0].end),
+        (a.id, t(9, 0), Some(t(10, 0)))
+    );
+    assert_eq!(
+        (es[1].project_id, es[1].start, es[1].end),
+        (b.id, t(10, 0), None)
+    );
     let s = snap(&tr, t(10, 30));
     assert_eq!(s.status, ClockStatus::Running);
     assert_eq!(s.session_project.as_ref().map(|p| p.id), Some(b.id));
@@ -69,7 +81,10 @@ fn switch_from_paused_starts_new_session() {
 #[test]
 fn switch_to_unknown_project_is_not_found() {
     let (mut tr, _, _) = setup();
-    assert!(matches!(tr.switch_to(999, t(9, 0)), Err(TrackerError::NotFound)));
+    assert!(matches!(
+        tr.switch_to(999, t(9, 0)),
+        Err(TrackerError::NotFound)
+    ));
     assert!(all_entries(&tr).is_empty());
 }
 
@@ -96,7 +111,9 @@ fn undo_resume_drops_question_about_the_undone_entry() {
     tr.switch_to(a.id, t(9, 0)).unwrap();
     tr.pause(t(9, 30)).unwrap();
     tr.resume(t(10, 0)).unwrap();
-    assert!(tr.begin_absence(&tz(), t(10, 5), t(10, 40), AbsenceReason::Idle).unwrap());
+    assert!(tr
+        .begin_absence(&tz(), t(10, 5), t(10, 40), AbsenceReason::Idle)
+        .unwrap());
     tr.undo(t(16, 0)).unwrap();
     let s = snap(&tr, t(10, 40));
     assert_eq!(s.status, ClockStatus::Paused);
@@ -111,7 +128,8 @@ fn heartbeat(tr: &Tracker) -> Option<Ms> {
 fn late_absence_answer_keeps_heartbeat_at_answer_time() {
     let (mut tr, a, _) = with_absence();
     tr.heartbeat(t(14, 59)).unwrap();
-    tr.resolve_absence(&tz(), AbsenceResolution::Discount, t(15, 0)).unwrap();
+    tr.resolve_absence(&tz(), AbsenceResolution::Discount, t(15, 0))
+        .unwrap();
     assert!(heartbeat(&tr).unwrap() >= t(15, 0));
     // A crash right after answering must not close the entry back at 13:10.
     let mut tr = Tracker::new(tr.db);
@@ -186,7 +204,9 @@ fn switch_is_undoable() {
 fn with_absence() -> (Tracker, Project, Project) {
     let (mut tr, a, b) = setup();
     tr.switch_to(a.id, t(9, 0)).unwrap();
-    assert!(tr.begin_absence(&tz(), t(12, 5), t(13, 10), AbsenceReason::Idle).unwrap());
+    assert!(tr
+        .begin_absence(&tz(), t(12, 5), t(13, 10), AbsenceReason::Idle)
+        .unwrap());
     let s = snap(&tr, t(13, 10));
     let p = s.pending_absence.unwrap();
     assert_eq!((p.start, p.end, p.project_id), (t(12, 5), t(13, 10), a.id));
@@ -196,24 +216,31 @@ fn with_absence() -> (Tracker, Project, Project) {
 #[test]
 fn absence_discount() {
     let (mut tr, a, _) = with_absence();
-    tr.resolve_absence(&tz(), AbsenceResolution::Discount, t(13, 10)).unwrap();
+    tr.resolve_absence(&tz(), AbsenceResolution::Discount, t(13, 10))
+        .unwrap();
     assert_eq!(
         all_entries(&tr),
-        vec![e(1, a.id, t(9, 0), Some(t(12, 5))), e(2, a.id, t(13, 10), None)]
+        vec![
+            e(1, a.id, t(9, 0), Some(t(12, 5))),
+            e(2, a.id, t(13, 10), None)
+        ]
     );
     let s = snap(&tr, t(14, 0));
     assert_eq!(s.status, ClockStatus::Running);
     assert_eq!(s.session_project.map(|p| p.id), Some(a.id));
     assert_eq!(s.session_ms, (3 * 60 + 5 + 50) * MIN);
     assert_eq!(s.pending_absence, None);
-    assert!(repo::lunches_between(&tr.db, day(), day()).unwrap().is_empty());
+    assert!(repo::lunches_between(&tr.db, day(), day())
+        .unwrap()
+        .is_empty());
 }
 
 #[test]
 fn absence_discount_undo_restores_everything() {
     let (mut tr, _, _) = with_absence();
     let before = all_entries(&tr);
-    tr.resolve_absence(&tz(), AbsenceResolution::Discount, t(13, 10)).unwrap();
+    tr.resolve_absence(&tz(), AbsenceResolution::Discount, t(13, 10))
+        .unwrap();
     assert!(tr.undo(t(16, 0)).unwrap());
     assert_eq!(all_entries(&tr), before);
     let s = snap(&tr, t(14, 0));
@@ -224,32 +251,54 @@ fn absence_discount_undo_restores_everything() {
 #[test]
 fn absence_lunch_marks_lunch() {
     let (mut tr, a, _) = with_absence();
-    tr.resolve_absence(&tz(), AbsenceResolution::Lunch, t(13, 10)).unwrap();
+    tr.resolve_absence(&tz(), AbsenceResolution::Lunch, t(13, 10))
+        .unwrap();
     assert_eq!(
         all_entries(&tr),
-        vec![e(1, a.id, t(9, 0), Some(t(12, 5))), e(2, a.id, t(13, 10), None)]
+        vec![
+            e(1, a.id, t(9, 0), Some(t(12, 5))),
+            e(2, a.id, t(13, 10), None)
+        ]
     );
     let l = repo::lunches_between(&tr.db, day(), day()).unwrap();
-    assert_eq!(l, vec![Lunch { day: day(), start: t(12, 5), end: t(13, 10) }]);
+    assert_eq!(
+        l,
+        vec![Lunch {
+            day: day(),
+            start: t(12, 5),
+            end: t(13, 10)
+        }]
+    );
     tr.undo(t(16, 0)).unwrap();
-    assert!(repo::lunches_between(&tr.db, day(), day()).unwrap().is_empty());
+    assert!(repo::lunches_between(&tr.db, day(), day())
+        .unwrap()
+        .is_empty());
     assert_eq!(all_entries(&tr), vec![e(1, a.id, t(9, 0), None)]);
 }
 
 #[test]
 fn absence_lunch_replaces_existing_lunch_and_undo_restores_it() {
     let (mut tr, _, _) = with_absence();
-    let old = Lunch { day: day(), start: t(11, 0), end: t(11, 30) };
+    let old = Lunch {
+        day: day(),
+        start: t(11, 0),
+        end: t(11, 30),
+    };
     repo::upsert_lunch(&tr.db, &old).unwrap();
-    tr.resolve_absence(&tz(), AbsenceResolution::Lunch, t(13, 10)).unwrap();
+    tr.resolve_absence(&tz(), AbsenceResolution::Lunch, t(13, 10))
+        .unwrap();
     tr.undo(t(16, 0)).unwrap();
-    assert_eq!(repo::lunches_between(&tr.db, day(), day()).unwrap(), vec![old]);
+    assert_eq!(
+        repo::lunches_between(&tr.db, day(), day()).unwrap(),
+        vec![old]
+    );
 }
 
 #[test]
 fn absence_keep_changes_nothing() {
     let (mut tr, a, _) = with_absence();
-    tr.resolve_absence(&tz(), AbsenceResolution::Keep, t(13, 10)).unwrap();
+    tr.resolve_absence(&tz(), AbsenceResolution::Keep, t(13, 10))
+        .unwrap();
     assert_eq!(all_entries(&tr), vec![e(1, a.id, t(9, 0), None)]);
     let s = snap(&tr, t(14, 0));
     assert_eq!(s.session_ms, 5 * 60 * MIN);
@@ -262,7 +311,8 @@ fn absence_keep_changes_nothing() {
 #[test]
 fn absence_move_to_other_project() {
     let (mut tr, a, b) = with_absence();
-    tr.resolve_absence(&tz(), AbsenceResolution::MoveTo(b.id), t(13, 10)).unwrap();
+    tr.resolve_absence(&tz(), AbsenceResolution::MoveTo(b.id), t(13, 10))
+        .unwrap();
     assert_eq!(
         all_entries(&tr),
         vec![
@@ -293,10 +343,14 @@ fn absence_move_to_unknown_project_leaves_data_and_question() {
 #[test]
 fn absence_ignored_when_paused_or_idle() {
     let (mut tr, a, _) = setup();
-    assert!(!tr.begin_absence(&tz(), t(9, 0), t(10, 0), AbsenceReason::Idle).unwrap());
+    assert!(!tr
+        .begin_absence(&tz(), t(9, 0), t(10, 0), AbsenceReason::Idle)
+        .unwrap());
     tr.switch_to(a.id, t(9, 0)).unwrap();
     tr.pause(t(9, 30)).unwrap();
-    assert!(!tr.begin_absence(&tz(), t(10, 0), t(11, 0), AbsenceReason::Sleep).unwrap());
+    assert!(!tr
+        .begin_absence(&tz(), t(10, 0), t(11, 0), AbsenceReason::Sleep)
+        .unwrap());
     assert_eq!(snap(&tr, t(11, 0)).pending_absence, None);
 }
 
@@ -307,7 +361,9 @@ fn sleep_with_stop_on_sleep_closes_at_sleep_start() {
     st.stop_on_sleep = true;
     tr.set_settings(st).unwrap();
     tr.switch_to(a.id, t(9, 0)).unwrap();
-    assert!(!tr.begin_absence(&tz(), t(12, 5), t(13, 10), AbsenceReason::Sleep).unwrap());
+    assert!(!tr
+        .begin_absence(&tz(), t(12, 5), t(13, 10), AbsenceReason::Sleep)
+        .unwrap());
     assert_eq!(all_entries(&tr), vec![e(1, a.id, t(9, 0), Some(t(12, 5)))]);
     let s = snap(&tr, t(13, 10));
     assert_eq!(s.status, ClockStatus::Idle);
@@ -324,7 +380,9 @@ fn stop_on_sleep_closes_at_the_sleep_moment_not_last_activity() {
     st.stop_on_sleep = true;
     tr.set_settings(st).unwrap();
     tr.switch_to(a.id, t(9, 0)).unwrap();
-    assert!(!tr.begin_sleep_absence(&tz(), t(11, 25), t(12, 5), t(13, 10)).unwrap());
+    assert!(!tr
+        .begin_sleep_absence(&tz(), t(11, 25), t(12, 5), t(13, 10))
+        .unwrap());
     assert_eq!(all_entries(&tr), vec![e(1, a.id, t(9, 0), Some(t(12, 5)))]);
     assert!(snap(&tr, t(13, 10)).notice.unwrap().contains("12:05"));
 }
@@ -333,9 +391,14 @@ fn stop_on_sleep_closes_at_the_sleep_moment_not_last_activity() {
 fn prompted_sleep_absence_starts_at_last_activity() {
     let (mut tr, a, _) = setup();
     tr.switch_to(a.id, t(9, 0)).unwrap();
-    assert!(tr.begin_sleep_absence(&tz(), t(11, 25), t(12, 5), t(13, 10)).unwrap());
+    assert!(tr
+        .begin_sleep_absence(&tz(), t(11, 25), t(12, 5), t(13, 10))
+        .unwrap());
     let p = snap(&tr, t(13, 10)).pending_absence.unwrap();
-    assert_eq!((p.start, p.end, p.reason), (t(11, 25), t(13, 10), AbsenceReason::Sleep));
+    assert_eq!(
+        (p.start, p.end, p.reason),
+        (t(11, 25), t(13, 10), AbsenceReason::Sleep)
+    );
     assert_eq!(all_entries(&tr), vec![e(1, a.id, t(9, 0), None)]);
 }
 
@@ -346,7 +409,9 @@ fn idle_absence_with_stop_on_sleep_still_asks() {
     st.stop_on_sleep = true;
     tr.set_settings(st).unwrap();
     tr.switch_to(a.id, t(9, 0)).unwrap();
-    assert!(tr.begin_absence(&tz(), t(12, 5), t(13, 10), AbsenceReason::Idle).unwrap());
+    assert!(tr
+        .begin_absence(&tz(), t(12, 5), t(13, 10), AbsenceReason::Idle)
+        .unwrap());
     assert_eq!(all_entries(&tr), vec![e(1, a.id, t(9, 0), None)]);
 }
 
@@ -357,11 +422,17 @@ fn reconcile_closes_at_heartbeat_after_two_minutes() {
     tr.heartbeat(t(10, 0)).unwrap();
     // Simulate a restart.
     let mut tr = Tracker::new(tr.db);
-    assert_eq!(tr.reconcile_on_startup(&tz(), t(10, 3)).unwrap(), Some(t(10, 0)));
+    assert_eq!(
+        tr.reconcile_on_startup(&tz(), t(10, 3)).unwrap(),
+        Some(t(10, 0))
+    );
     assert_eq!(all_entries(&tr), vec![e(1, a.id, t(9, 0), Some(t(10, 0)))]);
     let s = snap(&tr, t(10, 3));
     assert_eq!(s.status, ClockStatus::Idle);
-    assert_eq!(s.notice.as_deref(), Some("O relógio foi parado às 10:00, quando o app fechou"));
+    assert_eq!(
+        s.notice.as_deref(),
+        Some("O relógio foi parado às 10:00, quando o app fechou")
+    );
     assert!(s.can_undo);
     tr.undo(t(16, 0)).unwrap();
     assert_eq!(all_entries(&tr), vec![e(1, a.id, t(9, 0), None)]);
@@ -377,7 +448,10 @@ fn reconcile_keeps_running_under_two_minutes() {
     tr.switch_to(a.id, t(9, 0)).unwrap();
     tr.heartbeat(t(10, 0)).unwrap();
     let mut tr = Tracker::new(tr.db);
-    assert_eq!(tr.reconcile_on_startup(&tz(), t(10, 0) + 2 * MIN).unwrap(), None);
+    assert_eq!(
+        tr.reconcile_on_startup(&tz(), t(10, 0) + 2 * MIN).unwrap(),
+        None
+    );
     assert_eq!(all_entries(&tr), vec![e(1, a.id, t(9, 0), None)]);
     let s = snap(&tr, t(10, 3));
     assert_eq!(s.status, ClockStatus::Running);
@@ -393,7 +467,10 @@ fn reconcile_never_closes_before_entry_start() {
     // A stale heartbeat older than the open entry (e.g. crash before the first tick).
     repo::set_meta(&tr.db, META_HEARTBEAT, &t(8, 30)).unwrap();
     let mut tr = Tracker::new(tr.db);
-    assert_eq!(tr.reconcile_on_startup(&tz(), t(12, 0)).unwrap(), Some(t(9, 0)));
+    assert_eq!(
+        tr.reconcile_on_startup(&tz(), t(12, 0)).unwrap(),
+        Some(t(9, 0))
+    );
     assert_eq!(all_entries(&tr)[1], e(2, b.id, t(9, 0), Some(t(9, 0))));
 }
 
@@ -426,7 +503,10 @@ fn update_entry_rejects_inverted_range() {
     let en = tr.add_entry(a.id, t(9, 0), t(10, 0), t(12, 0)).unwrap();
     let r = tr.update_entry(en.id, Some(t(11, 0)), None, None, t(12, 0));
     assert!(matches!(r, Err(TrackerError::InvalidRange)));
-    assert_eq!(r.unwrap_err().to_string(), "O início precisa ser antes do fim");
+    assert_eq!(
+        r.unwrap_err().to_string(),
+        "O início precisa ser antes do fim"
+    );
     let r = tr.update_entry(en.id, None, Some(t(9, 0)), None, t(12, 0));
     assert!(matches!(r, Err(TrackerError::InvalidRange)));
     assert!(matches!(
@@ -441,7 +521,10 @@ fn add_entry_rejects_end_in_the_future() {
     let (mut tr, a, _) = setup();
     let r = tr.add_entry(a.id, t(11, 0), t(13, 0), t(12, 0));
     assert!(matches!(r, Err(TrackerError::FutureEnd)));
-    assert_eq!(r.unwrap_err().to_string(), "O registro não pode terminar no futuro");
+    assert_eq!(
+        r.unwrap_err().to_string(),
+        "O registro não pode terminar no futuro"
+    );
     assert!(all_entries(&tr).is_empty());
     // Ending exactly now is fine.
     tr.add_entry(a.id, t(11, 0), t(12, 0), t(12, 0)).unwrap();
@@ -470,7 +553,10 @@ fn clock_refuses_to_start_before_a_future_entry() {
     let (mut tr, a, b) = setup();
     repo::insert_entry(&tr.db, a.id, t(11, 0), Some(t(13, 0))).unwrap();
     let before = all_entries(&tr);
-    assert!(matches!(tr.switch_to(b.id, t(12, 0)), Err(TrackerError::FutureEnd)));
+    assert!(matches!(
+        tr.switch_to(b.id, t(12, 0)),
+        Err(TrackerError::FutureEnd)
+    ));
     assert_eq!(all_entries(&tr), before);
     // After that entry ends, the clock starts normally.
     tr.switch_to(b.id, t(13, 0)).unwrap();
@@ -484,7 +570,9 @@ fn clock_refuses_to_start_before_a_future_entry() {
 fn resolving_absence_refuses_with_a_future_entry() {
     let (mut tr, a, b) = setup();
     tr.switch_to(a.id, t(9, 0)).unwrap();
-    assert!(tr.begin_absence(&tz(), t(10, 0), t(10, 40), AbsenceReason::Idle).unwrap());
+    assert!(tr
+        .begin_absence(&tz(), t(10, 0), t(10, 40), AbsenceReason::Idle)
+        .unwrap());
     repo::insert_entry(&tr.db, b.id, t(11, 0), Some(t(12, 0))).unwrap();
     let before = all_entries(&tr);
     let r = tr.resolve_absence(&tz(), AbsenceResolution::Discount, t(10, 45));
@@ -503,7 +591,10 @@ fn update_entry_rejects_overlap() {
     let before = all_entries(&tr);
     let r = tr.update_entry(y.id, Some(t(8, 30)), None, None, t(12, 0));
     assert!(matches!(r, Err(TrackerError::Overlap)));
-    assert_eq!(r.unwrap_err().to_string(), "Esse horário sobrepõe outro registro");
+    assert_eq!(
+        r.unwrap_err().to_string(),
+        "Esse horário sobrepõe outro registro"
+    );
     // The open entry counts as ending at `now`.
     let r = tr.update_entry(y.id, None, Some(t(11, 30)), None, t(12, 0));
     assert!(matches!(r, Err(TrackerError::Overlap)));
@@ -513,8 +604,12 @@ fn update_entry_rejects_overlap() {
     ));
     assert_eq!(all_entries(&tr), before);
     // A valid edit works and is undoable.
-    tr.update_entry(x.id, Some(t(7, 30)), None, Some(b.id), t(12, 0)).unwrap();
-    assert_eq!(repo::get_entry(&tr.db, x.id).unwrap(), Some(e(x.id, b.id, t(7, 30), Some(t(9, 0)))));
+    tr.update_entry(x.id, Some(t(7, 30)), None, Some(b.id), t(12, 0))
+        .unwrap();
+    assert_eq!(
+        repo::get_entry(&tr.db, x.id).unwrap(),
+        Some(e(x.id, b.id, t(7, 30), Some(t(9, 0))))
+    );
     tr.undo(t(16, 0)).unwrap();
     assert_eq!(all_entries(&tr), before);
 }
@@ -527,8 +622,17 @@ fn entry_ops_on_missing_id_are_not_found() {
         Err(TrackerError::NotFound)
     ));
     assert!(matches!(tr.delete_entry(42), Err(TrackerError::NotFound)));
-    let ghost = Project { id: 42, name: "x".into(), client: "y".into(), color: "#fff".into(), archived: false };
-    assert!(matches!(tr.update_project(ghost), Err(TrackerError::NotFound)));
+    let ghost = Project {
+        id: 42,
+        name: "x".into(),
+        client: "y".into(),
+        color: "#fff".into(),
+        archived: false,
+    };
+    assert!(matches!(
+        tr.update_project(ghost),
+        Err(TrackerError::NotFound)
+    ));
 }
 
 #[test]
@@ -546,11 +650,17 @@ fn delete_running_entry_ends_session_and_undo_restores() {
 #[test]
 fn unmark_lunch_is_undoable() {
     let (mut tr, _, _) = with_absence();
-    tr.resolve_absence(&tz(), AbsenceResolution::Lunch, t(13, 10)).unwrap();
+    tr.resolve_absence(&tz(), AbsenceResolution::Lunch, t(13, 10))
+        .unwrap();
     tr.unmark_lunch(day()).unwrap();
-    assert!(repo::lunches_between(&tr.db, day(), day()).unwrap().is_empty());
+    assert!(repo::lunches_between(&tr.db, day(), day())
+        .unwrap()
+        .is_empty());
     tr.undo(t(16, 0)).unwrap();
-    assert_eq!(repo::lunches_between(&tr.db, day(), day()).unwrap().len(), 1);
+    assert_eq!(
+        repo::lunches_between(&tr.db, day(), day()).unwrap().len(),
+        1
+    );
 }
 
 #[test]
@@ -568,7 +678,11 @@ fn recents_order_and_shortcuts() {
 
     // Only one used project: padded with other active projects by name.
     tr.add_entry(pc.id, t(8, 0), t(9, 0), t(9, 0)).unwrap();
-    let r: Vec<i64> = snap(&tr, t(9, 0)).recents.iter().map(|r| r.project.id).collect();
+    let r: Vec<i64> = snap(&tr, t(9, 0))
+        .recents
+        .iter()
+        .map(|r| r.project.id)
+        .collect();
     assert_eq!(r, vec![pc.id, pa.id, pb.id, pd.id]);
 
     tr.add_entry(pa.id, t(9, 0), t(10, 0), t(13, 0)).unwrap();
@@ -605,7 +719,12 @@ fn reports_delegate_to_calc() {
     assert_eq!(dc.per_project[&a.id].normal_ms, 8 * 60 * MIN);
     assert_eq!(dc.per_project[&a.id].extra_ms, 2 * 60 * MIN);
     let wr = tr
-        .week_report(&tz(), crate::domain::time::week_start(day()), t(20, 0), Grouping::Project)
+        .week_report(
+            &tz(),
+            crate::domain::time::week_start(day()),
+            t(20, 0),
+            Grouping::Project,
+        )
         .unwrap();
     assert_eq!(wr.total.total_ms, 10 * 60 * MIN);
 }
@@ -613,9 +732,18 @@ fn reports_delegate_to_calc() {
 #[test]
 fn serde_shapes() {
     use serde_json::{from_str, json, to_value};
-    assert_eq!(to_value(AbsenceResolution::Discount).unwrap(), json!({"kind": "discount"}));
-    assert_eq!(to_value(AbsenceResolution::Lunch).unwrap(), json!({"kind": "lunch"}));
-    assert_eq!(to_value(AbsenceResolution::Keep).unwrap(), json!({"kind": "keep"}));
+    assert_eq!(
+        to_value(AbsenceResolution::Discount).unwrap(),
+        json!({"kind": "discount"})
+    );
+    assert_eq!(
+        to_value(AbsenceResolution::Lunch).unwrap(),
+        json!({"kind": "lunch"})
+    );
+    assert_eq!(
+        to_value(AbsenceResolution::Keep).unwrap(),
+        json!({"kind": "keep"})
+    );
     assert_eq!(
         to_value(AbsenceResolution::MoveTo(7)).unwrap(),
         json!({"kind": "moveTo", "projectId": 7})
@@ -624,16 +752,30 @@ fn serde_shapes() {
         from_str::<AbsenceResolution>(r#"{"kind":"moveTo","projectId":7}"#).unwrap(),
         AbsenceResolution::MoveTo(7)
     );
-    assert_eq!(from_str::<AbsenceResolution>(r#"{"kind":"keep"}"#).unwrap(), AbsenceResolution::Keep);
+    assert_eq!(
+        from_str::<AbsenceResolution>(r#"{"kind":"keep"}"#).unwrap(),
+        AbsenceResolution::Keep
+    );
     assert_eq!(to_value(ClockStatus::Paused).unwrap(), json!("paused"));
     assert_eq!(to_value(AbsenceReason::Sleep).unwrap(), json!("sleep"));
-    let a = Absence { start: 1, end: 2, reason: AbsenceReason::Idle, project_id: 3 };
+    let a = Absence {
+        start: 1,
+        end: 2,
+        reason: AbsenceReason::Idle,
+        project_id: 3,
+    };
     assert_eq!(
         to_value(&a).unwrap(),
         json!({"start": 1, "end": 2, "reason": "idle", "projectId": 3})
     );
-    assert_eq!(to_value(TrackerError::Overlap).unwrap(), json!("Esse horário sobrepõe outro registro"));
-    assert_eq!(to_value(TrackerError::FutureEnd).unwrap(), json!("O registro não pode terminar no futuro"));
+    assert_eq!(
+        to_value(TrackerError::Overlap).unwrap(),
+        json!("Esse horário sobrepõe outro registro")
+    );
+    assert_eq!(
+        to_value(TrackerError::FutureEnd).unwrap(),
+        json!("O registro não pode terminar no futuro")
+    );
 }
 
 #[test]
@@ -670,7 +812,15 @@ fn pause_and_stop_report_the_closed_block() {
     let first = all_entries(&tr)[0].id;
     let c = snap(&tr, t(10, 0)).last_closed_entry.unwrap();
     assert_eq!(tr.last_closed(), Some(c));
-    assert_eq!(c, ClosedEntry { id: first, project_id: a.id, start: t(9, 0), end: t(10, 0) });
+    assert_eq!(
+        c,
+        ClosedEntry {
+            id: first,
+            project_id: a.id,
+            start: t(9, 0),
+            end: t(10, 0)
+        }
+    );
     // pausing again (already paused) closes nothing
     tr.pause(t(10, 5)).unwrap();
     tr.resume(t(10, 10)).unwrap();
@@ -701,17 +851,31 @@ fn undo_clears_the_last_closed_block() {
 fn set_entry_note_trims_clears_and_validates() {
     let (mut tr, a, _) = setup();
     let en = tr.add_entry(a.id, t(9, 0), t(10, 0), t(12, 0)).unwrap();
-    let got = tr.set_entry_note(en.id, Some("  revisei o PR \n".into())).unwrap();
+    let got = tr
+        .set_entry_note(en.id, Some("  revisei o PR \n".into()))
+        .unwrap();
     assert_eq!(got.note.as_deref(), Some("revisei o PR"));
     assert_eq!(all_entries(&tr)[0].note.as_deref(), Some("revisei o PR"));
-    assert_eq!(tr.set_entry_note(en.id, Some("   ".into())).unwrap().note, None);
+    assert_eq!(
+        tr.set_entry_note(en.id, Some("   ".into())).unwrap().note,
+        None
+    );
     tr.set_entry_note(en.id, Some("x".into())).unwrap();
     assert_eq!(tr.set_entry_note(en.id, None).unwrap().note, None);
     // 500 chars (not bytes) is the limit
     let ok = "é".repeat(500);
-    assert_eq!(tr.set_entry_note(en.id, Some(ok.clone())).unwrap().note, Some(ok));
-    assert!(matches!(tr.set_entry_note(en.id, Some("a".repeat(501))), Err(TrackerError::NoteTooLong)));
-    assert!(matches!(tr.set_entry_note(999, Some("x".into())), Err(TrackerError::NotFound)));
+    assert_eq!(
+        tr.set_entry_note(en.id, Some(ok.clone())).unwrap().note,
+        Some(ok)
+    );
+    assert!(matches!(
+        tr.set_entry_note(en.id, Some("a".repeat(501))),
+        Err(TrackerError::NoteTooLong)
+    ));
+    assert!(matches!(
+        tr.set_entry_note(999, Some("x".into())),
+        Err(TrackerError::NotFound)
+    ));
 }
 
 #[test]
@@ -725,7 +889,10 @@ fn saving_a_note_keeps_the_previous_undo() {
     // undo of the stop reopens the block and keeps its note
     assert!(tr.undo(t(10, 1)).unwrap());
     let es = all_entries(&tr);
-    assert_eq!((es[0].end, es[0].note.as_deref()), (None, Some("planejamento")));
+    assert_eq!(
+        (es[0].end, es[0].note.as_deref()),
+        (None, Some("planejamento"))
+    );
     assert_eq!(snap(&tr, t(10, 1)).status, ClockStatus::Running);
 }
 
@@ -741,8 +908,16 @@ fn notes_reach_day_segments() {
 #[test]
 fn closed_entry_serde_shape() {
     use serde_json::{json, to_value};
-    let c = ClosedEntry { id: 1, project_id: 2, start: 3, end: 4 };
-    assert_eq!(to_value(c).unwrap(), json!({"id": 1, "projectId": 2, "start": 3, "end": 4}));
+    let c = ClosedEntry {
+        id: 1,
+        project_id: 2,
+        start: 3,
+        end: 4,
+    };
+    assert_eq!(
+        to_value(c).unwrap(),
+        json!({"id": 1, "projectId": 2, "start": 3, "end": 4})
+    );
     let (tr, _, _) = setup();
     let v = to_value(snap(&tr, t(9, 0))).unwrap();
     assert!(v.get("lastClosedEntry").is_some_and(|x| x.is_null()));
@@ -760,7 +935,11 @@ fn with_language(tr: &mut Tracker, l: crate::i18n::LanguagePref) {
 fn lang_follows_settings_then_system() {
     use crate::i18n::{Lang, LanguagePref};
     let (mut tr, _, _) = setup();
-    assert_eq!(tr.lang(), Lang::PtBr, "tests default to pt-BR as the system language");
+    assert_eq!(
+        tr.lang(),
+        Lang::PtBr,
+        "tests default to pt-BR as the system language"
+    );
     tr.set_system_lang(Lang::Es);
     assert_eq!(tr.lang(), Lang::Es);
     with_language(&mut tr, LanguagePref::En);
@@ -773,12 +952,54 @@ fn lang_follows_settings_then_system() {
 fn error_messages_per_language() {
     use crate::i18n::Lang;
     let cases = [
-        (TrackerError::Overlap, ["Esse horário sobrepõe outro registro", "This time overlaps another record", "Este horario se superpone con otro registro"]),
-        (TrackerError::NotFound, ["Registro não encontrado", "Record not found", "Registro no encontrado"]),
-        (TrackerError::InvalidRange, ["O início precisa ser antes do fim", "Start has to be before end", "El inicio tiene que ser antes del fin"]),
-        (TrackerError::FutureEnd, ["O registro não pode terminar no futuro", "A record can't end in the future", "El registro no puede terminar en el futuro"]),
-        (TrackerError::NoSession, ["Nenhuma sessão ativa", "No active session", "No hay ninguna sesión activa"]),
-        (TrackerError::NoteTooLong, ["A nota pode ter no máximo 500 caracteres", "Notes can have at most 500 characters", "La nota puede tener como máximo 500 caracteres"]),
+        (
+            TrackerError::Overlap,
+            [
+                "Esse horário sobrepõe outro registro",
+                "This time overlaps another record",
+                "Este horario se superpone con otro registro",
+            ],
+        ),
+        (
+            TrackerError::NotFound,
+            [
+                "Registro não encontrado",
+                "Record not found",
+                "Registro no encontrado",
+            ],
+        ),
+        (
+            TrackerError::InvalidRange,
+            [
+                "O início precisa ser antes do fim",
+                "Start has to be before end",
+                "El inicio tiene que ser antes del fin",
+            ],
+        ),
+        (
+            TrackerError::FutureEnd,
+            [
+                "O registro não pode terminar no futuro",
+                "A record can't end in the future",
+                "El registro no puede terminar en el futuro",
+            ],
+        ),
+        (
+            TrackerError::NoSession,
+            [
+                "Nenhuma sessão ativa",
+                "No active session",
+                "No hay ninguna sesión activa",
+            ],
+        ),
+        (
+            TrackerError::NoteTooLong,
+            [
+                "A nota pode ter no máximo 500 caracteres",
+                "Notes can have at most 500 characters",
+                "La nota puede tener como máximo 500 caracteres",
+            ],
+        ),
     ];
     for (err, [pt, en, es]) in cases {
         assert_eq!(err.message(Lang::PtBr), pt);
@@ -787,8 +1008,12 @@ fn error_messages_per_language() {
         assert_eq!(err.to_string(), pt, "Display stays pt-BR");
     }
     let store = TrackerError::from(rusqlite::Error::InvalidQuery);
-    assert!(store.message(Lang::En).starts_with("Couldn't access the data: "));
-    assert!(store.message(Lang::PtBr).starts_with("Erro ao acessar os dados: "));
+    assert!(store
+        .message(Lang::En)
+        .starts_with("Couldn't access the data: "));
+    assert!(store
+        .message(Lang::PtBr)
+        .starts_with("Erro ao acessar os dados: "));
 }
 
 #[test]
@@ -800,14 +1025,23 @@ fn notices_render_in_the_current_language() {
     let mut tr = Tracker::new(tr.db);
     tr.set_system_lang(Lang::En);
     tr.reconcile_on_startup(&tz(), t(10, 3)).unwrap();
-    assert_eq!(snap(&tr, t(10, 3)).notice.as_deref(), Some("The clock was stopped at 10:00, when the app closed"));
+    assert_eq!(
+        snap(&tr, t(10, 3)).notice.as_deref(),
+        Some("The clock was stopped at 10:00, when the app closed")
+    );
     // Switching language re-renders the pending notice (set_settings does not clear it).
     let key = snap(&tr, t(10, 3)).notice_key;
     assert_eq!(key, Some(format!("quit:{}", t(10, 0))));
     with_language(&mut tr, LanguagePref::Es);
     let s = snap(&tr, t(10, 3));
-    assert_eq!(s.notice.as_deref(), Some("El reloj se detuvo a las 10:00, cuando la app se cerró"));
-    assert_eq!(s.notice_key, key, "same notice, same identity in any language");
+    assert_eq!(
+        s.notice.as_deref(),
+        Some("El reloj se detuvo a las 10:00, cuando la app se cerró")
+    );
+    assert_eq!(
+        s.notice_key, key,
+        "same notice, same identity in any language"
+    );
 
     let (mut tr, a, _) = setup();
     let mut st = tr.settings().unwrap();
@@ -815,12 +1049,16 @@ fn notices_render_in_the_current_language() {
     st.language = LanguagePref::En;
     tr.set_settings(st).unwrap();
     tr.switch_to(a.id, t(9, 0)).unwrap();
-    tr.begin_absence(&tz(), t(12, 5), t(13, 10), AbsenceReason::Sleep).unwrap();
+    tr.begin_absence(&tz(), t(12, 5), t(13, 10), AbsenceReason::Sleep)
+        .unwrap();
     assert_eq!(
         snap(&tr, t(13, 10)).notice.as_deref(),
         Some("The clock was stopped at 12:05, when the computer went to sleep")
     );
-    assert_eq!(snap(&tr, t(13, 10)).notice_key, Some(format!("sleep:{}", t(12, 5))));
+    assert_eq!(
+        snap(&tr, t(13, 10)).notice_key,
+        Some(format!("sleep:{}", t(12, 5)))
+    );
 }
 
 // ---- delete project ----
@@ -830,7 +1068,14 @@ fn delete_project_without_entries() {
     let (mut tr, a, b) = setup();
     let d = tr.delete_project(a.id, t(9, 0)).unwrap();
     assert_eq!((d.project.id, d.entries, d.ms), (a.id, 0, 0));
-    assert_eq!(tr.projects().unwrap().iter().map(|p| p.id).collect::<Vec<_>>(), vec![b.id]);
+    assert_eq!(
+        tr.projects()
+            .unwrap()
+            .iter()
+            .map(|p| p.id)
+            .collect::<Vec<_>>(),
+        vec![b.id]
+    );
 }
 
 #[test]
@@ -839,7 +1084,13 @@ fn delete_project_removes_its_entries_only() {
     tr.add_entry(a.id, t(9, 0), t(10, 0), t(12, 0)).unwrap();
     tr.add_entry(a.id, t(10, 0), t(10, 30), t(12, 0)).unwrap();
     tr.add_entry(b.id, t(11, 0), t(11, 15), t(12, 0)).unwrap();
-    assert_eq!(tr.project_usage(a.id).unwrap(), ProjectUsage { entries: 2, ms: 90 * MIN });
+    assert_eq!(
+        tr.project_usage(a.id).unwrap(),
+        ProjectUsage {
+            entries: 2,
+            ms: 90 * MIN
+        }
+    );
     let d = tr.delete_project(a.id, t(12, 0)).unwrap();
     assert_eq!((d.entries, d.ms), (2, 90 * MIN));
     let es = all_entries(&tr);
@@ -851,9 +1102,15 @@ fn delete_project_removes_its_entries_only() {
 fn delete_project_refuses_session_project_running_or_paused() {
     let (mut tr, a, b) = setup();
     tr.switch_to(a.id, t(9, 0)).unwrap();
-    assert!(matches!(tr.delete_project(a.id, t(9, 5)), Err(TrackerError::ProjectInSession)));
+    assert!(matches!(
+        tr.delete_project(a.id, t(9, 5)),
+        Err(TrackerError::ProjectInSession)
+    ));
     tr.pause(t(9, 10)).unwrap();
-    assert!(matches!(tr.delete_project(a.id, t(9, 15)), Err(TrackerError::ProjectInSession)));
+    assert!(matches!(
+        tr.delete_project(a.id, t(9, 15)),
+        Err(TrackerError::ProjectInSession)
+    ));
     assert!(tr.delete_project(b.id, t(9, 15)).is_ok());
     assert_eq!(all_entries(&tr).len(), 1);
     tr.stop(t(9, 20)).unwrap();
@@ -863,7 +1120,10 @@ fn delete_project_refuses_session_project_running_or_paused() {
 #[test]
 fn delete_project_unknown_id_is_not_found() {
     let (mut tr, _, _) = setup();
-    assert!(matches!(tr.delete_project(999, t(9, 0)), Err(TrackerError::NotFound)));
+    assert!(matches!(
+        tr.delete_project(999, t(9, 0)),
+        Err(TrackerError::NotFound)
+    ));
     assert!(matches!(tr.project_usage(999), Err(TrackerError::NotFound)));
 }
 
@@ -879,7 +1139,10 @@ fn undo_delete_project_restores_project_and_entries_with_same_ids() {
     assert!(tr.undo(t(12, 1)).unwrap());
     assert_eq!(tr.projects().unwrap(), before_projects);
     assert_eq!(all_entries(&tr), before_entries);
-    assert_eq!(all_entries(&tr).iter().map(|e| e.id).collect::<Vec<_>>(), vec![e1.id, e2.id]);
+    assert_eq!(
+        all_entries(&tr).iter().map(|e| e.id).collect::<Vec<_>>(),
+        vec![e1.id, e2.id]
+    );
 }
 
 #[test]

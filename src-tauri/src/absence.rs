@@ -21,7 +21,12 @@ pub enum MonitorEvent {
     /// `start` is the last activity (what the user is asked about). `sleep_at` is the moment the
     /// machine went to sleep (sleep only): stop-on-sleep closes the entry there, never earlier,
     /// so time without input before the lid closed is not discounted without asking.
-    Absence { start: Ms, end: Ms, reason: AbsenceReason, sleep_at: Option<Ms> },
+    Absence {
+        start: Ms,
+        end: Ms,
+        reason: AbsenceReason,
+        sleep_at: Option<Ms>,
+    },
 }
 
 pub struct AbsenceMonitor {
@@ -72,8 +77,16 @@ impl AbsenceMonitor {
         if slept {
             // Spec 6.3: the absence starts at the last activity, which may precede the sleep.
             // A suppressed counter still spans an earlier sleep, so it says nothing about activity.
-            let last_activity = if idle_was_suppressed { last_wall } else { last_wall - last_idle };
-            let start = self.pending_idle_start.take().map_or(last_activity, |p| p.min(last_activity)).min(last_wall);
+            let last_activity = if idle_was_suppressed {
+                last_wall
+            } else {
+                last_wall - last_idle
+            };
+            let start = self
+                .pending_idle_start
+                .take()
+                .map_or(last_activity, |p| p.min(last_activity))
+                .min(last_wall);
             self.suppress_idle = idle_ms >= RESUME_IDLE_MS;
             return Some(MonitorEvent::Absence {
                 start,
@@ -84,12 +97,15 @@ impl AbsenceMonitor {
         }
         if idle_ms < RESUME_IDLE_MS {
             self.suppress_idle = false;
-            return self.pending_idle_start.take().map(|start| MonitorEvent::Absence {
-                start,
-                end: wall_now - idle_ms,
-                reason: AbsenceReason::Idle,
-                sleep_at: None,
-            });
+            return self
+                .pending_idle_start
+                .take()
+                .map(|start| MonitorEvent::Absence {
+                    start,
+                    end: wall_now - idle_ms,
+                    reason: AbsenceReason::Idle,
+                    sleep_at: None,
+                });
         }
         if !self.suppress_idle && idle_ms >= self.idle_threshold_ms {
             let start = wall_now - idle_ms;
@@ -114,22 +130,35 @@ pub fn start_monitor(app: AppHandle) {
             std::thread::sleep(POLL);
             monitor.idle_threshold_ms = threshold_ms(&app);
             let state = app.state::<AppState>();
-            let running = state.lock().snapshot(&Local, now_ms()).map(|s| s.status == ClockStatus::Running).unwrap_or(false);
+            let running = state
+                .lock()
+                .snapshot(&Local, now_ms())
+                .map(|s| s.status == ClockStatus::Running)
+                .unwrap_or(false);
             let idle_ms = (crate::platform::idle_seconds() * 1000.0) as i64;
-            let Some(MonitorEvent::Absence { start, end, reason, sleep_at }) =
-                monitor.tick(now_ms(), mono(), idle_ms, running)
+            let Some(MonitorEvent::Absence {
+                start,
+                end,
+                reason,
+                sleep_at,
+            }) = monitor.tick(now_ms(), mono(), idle_ms, running)
             else {
                 continue;
             };
             // Emit when the user must be asked, or stop-on-sleep left a notice.
             let mut new_question = false;
-            emit_if(&app, &state, |t| match sleep_at {
-                Some(at) => t.begin_sleep_absence(&Local, start, at, end),
-                None => t.begin_absence(&Local, start, end, reason),
-            }, |asked, snap| {
-                new_question = *asked && snap.pending_absence.is_some();
-                *asked || snap.notice.is_some()
-            });
+            emit_if(
+                &app,
+                &state,
+                |t| match sleep_at {
+                    Some(at) => t.begin_sleep_absence(&Local, start, at, end),
+                    None => t.begin_absence(&Local, start, end, reason),
+                },
+                |asked, snap| {
+                    new_question = *asked && snap.pending_absence.is_some();
+                    *asked || snap.notice.is_some()
+                },
+            );
             // The only producer of new pending absences: open the notch so the question is seen.
             if new_question {
                 // System-initiated: never take keyboard focus (the user is likely typing right now).
@@ -151,7 +180,13 @@ mod tests {
     }
 
     /// Ticks every 5 s of real time (wall and mono advance together).
-    fn feed(m: &mut AbsenceMonitor, from_s: i64, to_s: i64, idle: impl Fn(i64) -> i64, running: bool) -> Vec<MonitorEvent> {
+    fn feed(
+        m: &mut AbsenceMonitor,
+        from_s: i64,
+        to_s: i64,
+        idle: impl Fn(i64) -> i64,
+        running: bool,
+    ) -> Vec<MonitorEvent> {
         (from_s..=to_s)
             .step_by(5)
             .filter_map(|s| m.tick(T0 + s * 1000, mono(s * 1000), idle(s), running))
@@ -162,7 +197,13 @@ mod tests {
     fn idle_over_threshold_emits_on_return() {
         let mut m = AbsenceMonitor::new(15 * MIN, T0, mono(0));
         // Last input at t=10s; idle grows until t=3910s (65 min), then input resumes.
-        let ev = feed(&mut m, 5, 3910, |s| if s <= 10 { 1000 } else { (s - 10) * 1000 }, true);
+        let ev = feed(
+            &mut m,
+            5,
+            3910,
+            |s| if s <= 10 { 1000 } else { (s - 10) * 1000 },
+            true,
+        );
         assert!(ev.is_empty());
         let ev = m.tick(T0 + 3_915_000, mono(3_915_000), 1000, true);
         assert_eq!(
@@ -195,7 +236,12 @@ mod tests {
         assert_eq!(
             ev,
             // Last input 100 ms before the last tick.
-            Some(MonitorEvent::Absence { start: T0 + 4_900, end: wake, reason: AbsenceReason::Sleep, sleep_at: Some(T0 + 5_000) })
+            Some(MonitorEvent::Absence {
+                start: T0 + 4_900,
+                end: wake,
+                reason: AbsenceReason::Sleep,
+                sleep_at: Some(T0 + 5_000)
+            })
         );
     }
 
@@ -228,7 +274,12 @@ mod tests {
         let ev = m.tick(wake, mono(125_000), 100, true);
         assert_eq!(
             ev,
-            Some(MonitorEvent::Absence { start: T0, end: wake, reason: AbsenceReason::Sleep, sleep_at: Some(T0 + 120_000) })
+            Some(MonitorEvent::Absence {
+                start: T0,
+                end: wake,
+                reason: AbsenceReason::Sleep,
+                sleep_at: Some(T0 + 120_000)
+            })
         );
     }
 
@@ -257,7 +308,13 @@ mod tests {
         let mut m = AbsenceMonitor::new(15 * MIN, T0, mono(0));
         let wake = T0 + 3_600_000;
         let ev = m.tick(wake, mono(5_000), 3_600_000, true);
-        assert!(matches!(ev, Some(MonitorEvent::Absence { reason: AbsenceReason::Sleep, .. })));
+        assert!(matches!(
+            ev,
+            Some(MonitorEvent::Absence {
+                reason: AbsenceReason::Sleep,
+                ..
+            })
+        ));
         // Idle counter still spans the sleep; no idle absence until input resumes.
         assert_eq!(m.tick(wake + 5_000, mono(10_000), 3_605_000, true), None);
         assert_eq!(m.tick(wake + 10_000, mono(15_000), 200, true), None);
@@ -275,7 +332,10 @@ mod tests {
     fn pausing_discards_pending_idle() {
         let mut m = AbsenceMonitor::new(15 * MIN, T0, mono(0));
         feed(&mut m, 5, 1200, |s| s * 1000, true);
-        assert_eq!(m.tick(T0 + 1_205_000, mono(1_205_000), 1_205_000, false), None);
+        assert_eq!(
+            m.tick(T0 + 1_205_000, mono(1_205_000), 1_205_000, false),
+            None
+        );
         assert_eq!(m.tick(T0 + 1_210_000, mono(1_210_000), 500, true), None);
     }
 }

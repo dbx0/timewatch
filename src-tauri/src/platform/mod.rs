@@ -139,7 +139,11 @@ pub fn position_overlay(window: &WebviewWindow, l: &OverlayLayout) {
     }
     #[cfg(target_os = "windows")]
     {
-        windows::set_frame(window, size, tauri::PhysicalPosition::new(l.phys_x, l.phys_y));
+        windows::set_frame(
+            window,
+            size,
+            tauri::PhysicalPosition::new(l.phys_x, l.phys_y),
+        );
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {

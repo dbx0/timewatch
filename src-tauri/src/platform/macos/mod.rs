@@ -1,8 +1,8 @@
 use std::sync::mpsc;
 
 use objc2::{sel, MainThreadMarker};
-use objc2_foundation::NSObjectProtocol;
 use objc2_app_kit::NSScreen;
+use objc2_foundation::NSObjectProtocol;
 use tauri::{AppHandle, Manager, Monitor, WebviewWindow};
 use tauri_nspanel::{CollectionBehavior, ManagerExt, StyleMask, WebviewWindowExt};
 
@@ -44,7 +44,10 @@ pub fn idle_seconds() -> f64 {
 }
 
 /// Runs `f` on the main thread and waits for its result (inline when already there).
-fn on_main<T: Send + 'static>(app: &AppHandle, f: impl FnOnce(MainThreadMarker) -> T + Send + 'static) -> Option<T> {
+fn on_main<T: Send + 'static>(
+    app: &AppHandle,
+    f: impl FnOnce(MainThreadMarker) -> T + Send + 'static,
+) -> Option<T> {
     if let Some(mtm) = MainThreadMarker::new() {
         return Some(f(mtm));
     }
@@ -70,12 +73,18 @@ pub fn notch_info(app: &AppHandle, monitor: &Monitor) -> Option<NotchInfo> {
         let screens = NSScreen::screens(mtm);
         let screen = screens.iter().find(|s| {
             let f = s.frame();
-            (f.origin.x - x).abs() < 1.0 && (f.size.width - w).abs() < 1.0 && (f.size.height - h).abs() < 1.0
+            (f.origin.x - x).abs() < 1.0
+                && (f.size.width - w).abs() < 1.0
+                && (f.size.height - h).abs() < 1.0
         })?;
         // macOS 12+ selectors; an unknown selector would abort, so check first.
-        let supported = [sel!(safeAreaInsets), sel!(auxiliaryTopLeftArea), sel!(auxiliaryTopRightArea)]
-            .into_iter()
-            .all(|s| screen.respondsToSelector(s));
+        let supported = [
+            sel!(safeAreaInsets),
+            sel!(auxiliaryTopLeftArea),
+            sel!(auxiliaryTopRightArea),
+        ]
+        .into_iter()
+        .all(|s| screen.respondsToSelector(s));
         if !supported {
             return None;
         }
@@ -93,25 +102,30 @@ pub fn notch_info(app: &AppHandle, monitor: &Monitor) -> Option<NotchInfo> {
 
 pub fn make_overlay(window: &WebviewWindow) -> Result<(), String> {
     let window = window.clone();
-    on_main(&window.app_handle().clone(), move |_| -> Result<(), String> {
-        let panel = window.to_panel::<OverlayPanel>().map_err(|e| e.to_string())?;
-        panel.set_level(OVERLAY_LEVEL);
-        panel
-            .add_style_mask(StyleMask::empty().nonactivating_panel().into())
-            .map_err(|e| format!("{e:?}"))?;
-        panel.set_collection_behavior(
-            CollectionBehavior::new()
-                .can_join_all_spaces()
-                .stationary()
-                .full_screen_auxiliary()
-                .ignores_cycle()
-                .into(),
-        );
-        panel.set_has_shadow(false);
-        panel.set_hides_on_deactivate(false);
-        panel.set_works_when_modal(true);
-        Ok(())
-    })
+    on_main(
+        &window.app_handle().clone(),
+        move |_| -> Result<(), String> {
+            let panel = window
+                .to_panel::<OverlayPanel>()
+                .map_err(|e| e.to_string())?;
+            panel.set_level(OVERLAY_LEVEL);
+            panel
+                .add_style_mask(StyleMask::empty().nonactivating_panel().into())
+                .map_err(|e| format!("{e:?}"))?;
+            panel.set_collection_behavior(
+                CollectionBehavior::new()
+                    .can_join_all_spaces()
+                    .stationary()
+                    .full_screen_auxiliary()
+                    .ignores_cycle()
+                    .into(),
+            );
+            panel.set_has_shadow(false);
+            panel.set_hides_on_deactivate(false);
+            panel.set_works_when_modal(true);
+            Ok(())
+        },
+    )
     .unwrap_or_else(|| Err("main thread unavailable".into()))
 }
 
