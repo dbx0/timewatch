@@ -94,6 +94,7 @@ pub fn run() {
             app.manage(AppState::new(tracker));
             start_ticker(app.handle().clone());
             absence::start_monitor(app.handle().clone());
+            platform::power::start(app.handle());
             // Accessory first: opening a normal window below switches back to Regular.
             // Setting Accessory after the onboarding window hid it behind other apps.
             #[cfg(target_os = "macos")]

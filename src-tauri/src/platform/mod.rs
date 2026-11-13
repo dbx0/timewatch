@@ -6,6 +6,7 @@ use crate::window::OverlayLayout;
 
 #[cfg(target_os = "macos")]
 mod macos;
+pub mod power;
 #[cfg(target_os = "windows")]
 mod windows;
 

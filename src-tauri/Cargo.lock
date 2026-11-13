@@ -4363,6 +4363,7 @@ dependencies = [
 name = "timewatch"
 version = "0.1.0"
 dependencies = [
+ "block2",
  "chrono",
  "chrono-tz",
  "objc2",

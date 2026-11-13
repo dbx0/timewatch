@@ -128,20 +128,24 @@ pub fn start_monitor(app: AppHandle) {
         let mut monitor = AbsenceMonitor::new(threshold_ms(&app), now_ms(), mono());
         loop {
             std::thread::sleep(POLL);
-            monitor.idle_threshold_ms = threshold_ms(&app);
+            let now = now_ms();
+            let idle_ms = (crate::platform::idle_seconds() * 1000.0) as i64;
+            // Screen lock (macOS): idle counts from the lock moment, with a short threshold.
+            let (idle_ms, threshold) =
+                crate::platform::power::lock_adjusted(idle_ms, threshold_ms(&app), now);
+            monitor.idle_threshold_ms = threshold;
             let state = app.state::<AppState>();
             let running = state
                 .lock()
                 .snapshot(&Local, now_ms())
                 .map(|s| s.status == ClockStatus::Running)
                 .unwrap_or(false);
-            let idle_ms = (crate::platform::idle_seconds() * 1000.0) as i64;
             let Some(MonitorEvent::Absence {
                 start,
                 end,
                 reason,
                 sleep_at,
-            }) = monitor.tick(now_ms(), mono(), idle_ms, running)
+            }) = monitor.tick(now, mono(), idle_ms, running)
             else {
                 continue;
             };
@@ -151,7 +155,11 @@ pub fn start_monitor(app: AppHandle) {
                 &app,
                 &state,
                 |t| match sleep_at {
-                    Some(at) => t.begin_sleep_absence(&Local, start, at, end),
+                    // The OS will-sleep moment beats the last tick before the gap (macOS).
+                    Some(at) => {
+                        let at = crate::platform::power::refine_sleep_at(at, end);
+                        t.begin_sleep_absence(&Local, start, at, end)
+                    }
                     None => t.begin_absence(&Local, start, end, reason),
                 },
                 |asked, snap| {
