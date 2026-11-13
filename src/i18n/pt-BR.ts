@@ -85,6 +85,7 @@ export const ptBR = {
     autostart: "Iniciar junto com o sistema",
     autostartHint: "Pra não esquecer de abrir o app de manhã.",
     shortcut: "Atalho global",
+    shortcutFailed: (k: string) => `Não deu pra ativar ${k}: outro app pode estar usando esse atalho.`,
     shortcutHint: "Abre o painel do notch de qualquer lugar. Precisa de pelo menos uma tecla modificadora.",
     shortcutRecording: "Pressione o atalho… (Esc cancela)",
     monitor: "Monitor da pílula",

@@ -6,7 +6,7 @@ export function Row({ title, hint, note, children }: { title: string; hint?: str
       <div>
         <div className="font-medium">{title}</div>
         {hint && <div className="mt-0.5 max-w-[380px] text-xs text-mute">{hint}</div>}
-        {note && <div className="mt-1 max-w-[380px] text-xs text-accent2">{note}</div>}
+        {note && <div role="note" className="mt-1 max-w-[380px] text-xs text-accent2">{note}</div>}
       </div>
       {children}
     </div>
@@ -15,5 +15,6 @@ export function Row({ title, hint, note, children }: { title: string; hint?: str
 
 export interface SectionProps {
   settings: import("../../lib/types").Settings;
-  update: (patch: Partial<import("../../lib/types").Settings>) => void;
+  /** Applies at once; the promise settles when the save does (failures are already toasted). */
+  update: (patch: Partial<import("../../lib/types").Settings>) => Promise<void>;
 }

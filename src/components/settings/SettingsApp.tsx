@@ -49,10 +49,10 @@ export function SettingsApp() {
   }, [refetch, reloadProjects]);
 
   const update = (patch: Partial<Settings>) => {
-    if (!current.current) return;
+    if (!current.current) return Promise.resolve();
     const next = { ...current.current, ...patch };
     apply(next);
-    api.setSettings(next).catch((e) => {
+    return api.setSettings(next).then(() => {}, (e) => {
       toast(String(e));
       void refetch();
     });

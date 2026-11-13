@@ -87,6 +87,7 @@ export const en: Strings = {
     autostart: "Start with the system",
     autostartHint: "So you don't forget to open the app in the morning.",
     shortcut: "Global shortcut",
+    shortcutFailed: (k: string) => `Couldn't turn on ${k}: another app may be using it.`,
     shortcutHint: "Opens the notch panel from anywhere. Needs at least one modifier key.",
     shortcutRecording: "Press the shortcut… (Esc cancels)",
     monitor: "Pill display",

@@ -11,10 +11,11 @@ vi.mock("../../lib/api", () => ({
   deleteProject: vi.fn(),
   undo: vi.fn(),
   onChanged: vi.fn(),
+  listMonitors: vi.fn(),
+  getShortcutFailure: vi.fn(),
+  onShortcutFailed: vi.fn(),
 }));
-vi.mock("@tauri-apps/api/window", () => ({ availableMonitors: vi.fn() }));
 
-import { availableMonitors } from "@tauri-apps/api/window";
 import * as api from "../../lib/api";
 import { setLang } from "../../i18n";
 import { useToasts } from "../../stores/toast";
@@ -54,7 +55,9 @@ beforeEach(() => {
   vi.mocked(api.getSnapshot).mockResolvedValue(snapshot());
   vi.mocked(api.onChanged).mockResolvedValue(() => {});
   vi.mocked(api.updateProject).mockResolvedValue(undefined);
-  vi.mocked(availableMonitors).mockResolvedValue([]);
+  vi.mocked(api.listMonitors).mockResolvedValue([]);
+  vi.mocked(api.getShortcutFailure).mockResolvedValue(null);
+  vi.mocked(api.onShortcutFailed).mockResolvedValue(() => {});
 });
 
 describe("SettingsApp", () => {
@@ -128,12 +131,32 @@ describe("SettingsApp", () => {
     expect(useToasts.getState().current?.message).toBe("Erro ao acessar os dados");
   });
 
-  it("monitor dropdown stores the monitor name", async () => {
-    vi.mocked(availableMonitors).mockResolvedValue([{ name: "DELL U2720Q" }] as never);
+  it("monitor dropdown shows labels and stores the monitor id", async () => {
+    vi.mocked(api.listMonitors).mockResolvedValue([
+      { id: "DELL@0,0", label: "DELL (1)", primary: true },
+      { id: "DELL@1920,0", label: "DELL (2)", primary: false },
+    ]);
     await mount();
     fireEvent.click(screen.getByText("Tela principal"));
-    fireEvent.click(screen.getByText("DELL U2720Q"));
-    expect(api.setSettings).toHaveBeenCalledWith({ ...base, overlayMonitor: "DELL U2720Q" });
+    fireEvent.click(screen.getByText("DELL (2)"));
+    expect(api.setSettings).toHaveBeenCalledWith({ ...base, overlayMonitor: "DELL@1920,0" });
+  });
+
+  it("an unplugged stored monitor stays selectable", async () => {
+    vi.mocked(api.getSettings).mockResolvedValue({ ...base, overlayMonitor: "LG" });
+    await mount();
+    expect(screen.getByRole("button", { name: "Monitor da pílula" }).textContent).toContain("LG");
+  });
+
+  it("warns when the shortcut could not be registered, and clears after a working change", async () => {
+    vi.mocked(api.getShortcutFailure).mockResolvedValue({ shortcut: "Alt+Space", error: "em uso" });
+    await mount();
+    expect(screen.getByRole("note").textContent).toContain("em uso");
+    vi.mocked(api.getShortcutFailure).mockResolvedValue(null);
+    fireEvent.click(screen.getByRole("button", { name: /Atalho global/ }));
+    fireEvent.keyDown(screen.getByRole("button", { name: /Atalho global/ }), { code: "KeyK", key: "k", metaKey: true, shiftKey: true });
+    await flush();
+    expect(screen.queryByRole("note")).toBeNull();
   });
 
   it("language dropdown defaults to automatic and saves the choice", async () => {

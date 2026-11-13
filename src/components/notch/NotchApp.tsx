@@ -15,7 +15,7 @@ import { NotePrompt } from "./NotePrompt";
 import { Panel } from "./Panel";
 import { Pill, STRIP_PILL } from "./Pill";
 import { useT } from "../../i18n";
-import { formatShortcut } from "../settings/shortcut";
+import { formatShortcut, isMac } from "../settings/shortcut";
 
 /** First-run tip under the pill. */
 export const COACH_MS = 7000;
@@ -68,7 +68,8 @@ export function NotchApp() {
   const [grown, setGrown] = useState(false);
   const [view, setView] = useState<View>({ kind: "main" });
   const [coach, setCoach] = useState(false);
-  const [shortcut, setShortcut] = useState("Alt+Space");
+  // Until settings load: the per-OS default (domain/model.rs DEFAULT_SHORTCUT).
+  const [shortcut, setShortcut] = useState(isMac() ? "Alt+Space" : "Ctrl+Alt+Space");
   const coachTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const [focusReq, setFocusReq] = useState(0);
 

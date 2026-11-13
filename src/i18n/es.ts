@@ -87,6 +87,7 @@ export const es: Strings = {
     autostart: "Iniciar con el sistema",
     autostartHint: "Para no olvidarte de abrir la app por la mañana.",
     shortcut: "Atajo global",
+    shortcutFailed: (k: string) => `No se pudo activar ${k}: otra app puede estar usándolo.`,
     shortcutHint: "Abre el panel del notch desde cualquier lugar. Necesita al menos una tecla modificadora.",
     shortcutRecording: "Presiona el atajo… (Esc cancela)",
     monitor: "Pantalla de la píldora",

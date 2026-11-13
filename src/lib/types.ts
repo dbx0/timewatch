@@ -47,6 +47,19 @@ export interface Lunch {
   end: Ms;
 }
 
+/** One option of `list_monitors`: `id` is stored in `overlayMonitor`, `label` is shown. */
+export interface MonitorOption {
+  id: string;
+  label: string;
+  primary: boolean;
+}
+
+/** Why the global shortcut is not active (`error` is already localized). */
+export interface ShortcutFailure {
+  shortcut: string;
+  error: string;
+}
+
 export interface Settings {
   roundingMin: number;
   /** Daily target hours, Monday..Sunday. */

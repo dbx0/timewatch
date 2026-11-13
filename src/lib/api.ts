@@ -16,7 +16,9 @@ import type {
   Project,
   ProjectUsage,
   DeletedProject,
+  MonitorOption,
   Settings,
+  ShortcutFailure,
   TrackerSnapshot,
   WeekReport,
   WindowKind,
@@ -59,6 +61,10 @@ export const setEntryNote = (id: number, note: string | null) =>
 export const unmarkLunch = (day: IsoDate) => invoke<void>("unmark_lunch", { day });
 
 export const getSettings = () => invoke<Settings>("get_settings");
+export const listMonitors = () => invoke<MonitorOption[]>("list_monitors");
+export const getShortcutFailure = () => invoke<ShortcutFailure | null>("get_shortcut_failure");
+export const onShortcutFailed = (cb: (f: ShortcutFailure) => void): Promise<UnlistenFn> =>
+  listen<ShortcutFailure>("shortcut://failed", (e) => cb(e.payload));
 export const setSettings = (settings: Settings) => invoke<void>("set_settings", { settings });
 /** The resolved UI language (the stored choice, or the OS language for `system`). */
 export const getLanguage = () => invoke<Lang>("get_language");

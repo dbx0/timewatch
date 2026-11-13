@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
-import { availableMonitors } from "@tauri-apps/api/window";
 import { LANGS, LANGUAGE_NAMES, useT, type LanguagePref } from "../../i18n";
 import { Dropdown } from "../ui/Dropdown";
 import { Segmented } from "../ui/Segmented";
 import { Toggle } from "../ui/Toggle";
+import * as api from "../../lib/api";
+import type { MonitorOption, ShortcutFailure } from "../../lib/types";
 import { Row, type SectionProps } from "./Row";
 import { formatShortcut, isMac, shortcutFromEvent } from "./shortcut";
 
@@ -48,24 +49,33 @@ function ShortcutRecorder({ value, onChange }: { value: string; onChange: (s: st
 export function GeneralSection({ settings, update }: SectionProps) {
   const L = useT();
   const t = L.settings;
-  const [names, setNames] = useState<string[]>([]);
+  const [monitors, setMonitors] = useState<MonitorOption[]>([]);
+  const [failure, setFailure] = useState<ShortcutFailure | null>(null);
   useEffect(() => {
     let off = false;
-    availableMonitors()
-      .then((ms) => {
-        if (!off) setNames(ms.map((m) => m.name ?? "").filter((n) => n));
-      })
+    const unlisten = api.onShortcutFailed((f) => !off && setFailure(f));
+    Promise.resolve(api.listMonitors())
+      .then((ms) => !off && setMonitors(ms ?? []))
+      .catch(() => {});
+    Promise.resolve(api.getShortcutFailure())
+      .then((f) => !off && setFailure(f ?? null))
       .catch(() => {});
     return () => {
       off = true;
+      void Promise.resolve(unlisten).then((u) => u?.());
     };
   }, []);
 
+  /** Saves a new shortcut, then asks whether it registered (a success clears the warning). */
+  const changeShortcut = (s: string) =>
+    update({ shortcut: s }).then(() => Promise.resolve(api.getShortcutFailure()).then((f) => setFailure(f ?? null), () => {}));
+
   const stored = settings.overlayMonitor;
-  const all = Array.from(new Set(stored && !names.includes(stored) ? [...names, stored] : names));
   const options = [
     { value: "", label: t.mainScreen },
-    ...all.map((n) => ({ value: n, label: n })),
+    ...monitors.map((m) => ({ value: m.id, label: m.label })),
+    // A stored monitor that is unplugged right now stays visible (and selected).
+    ...(stored && !monitors.some((m) => m.id === stored) ? [{ value: stored, label: stored }] : []),
   ];
 
   return (
@@ -97,8 +107,12 @@ export function GeneralSection({ settings, update }: SectionProps) {
       <Row title={t.autostart} hint={t.autostartHint}>
         <Toggle label={t.autostart} checked={settings.autostart} onChange={(v) => update({ autostart: v })} />
       </Row>
-      <Row title={t.shortcut} hint={t.shortcutHint}>
-        <ShortcutRecorder value={settings.shortcut} onChange={(s) => update({ shortcut: s })} />
+      <Row
+        title={t.shortcut}
+        hint={t.shortcutHint}
+        note={failure && failure.shortcut === settings.shortcut ? `${t.shortcutFailed(formatShortcut(failure.shortcut, isMac()))} ${failure.error}` : undefined}
+      >
+        <ShortcutRecorder value={settings.shortcut} onChange={(s) => void changeShortcut(s)} />
       </Row>
       <Row title={t.monitor} hint={t.monitorHint}>
         <Dropdown
