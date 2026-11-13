@@ -1,4 +1,4 @@
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import * as api from "../../lib/api";
 import type { HitRect, OverlayConfig } from "../../lib/types";
@@ -33,6 +33,8 @@ export const HOVER_FALLBACK_MS = 1500;
 export const TOAST_HOVER_GRACE = 80;
 const PANEL_W = 440;
 const SPRING = { type: "spring", stiffness: 420, damping: 32 } as const;
+/** Closing: shrink back into the pill, a bit faster than the opening spring. */
+const CLOSE_EASE = { duration: 0.2, ease: [0.4, 0, 1, 1] } as const;
 /** Until `get_overlay_config` answers. */
 const FALLBACK: OverlayConfig = { mode: "strip", notchWidth: null, notchHeight: null, pillWidth: 160, pillHeight: 6 };
 
@@ -324,55 +326,60 @@ export function NotchApp() {
       <div
         ref={surfaceRef}
         data-hit="surface"
+        className="relative"
         onPointerEnter={() => {
           if (!openRef.current && hoveringRef.current) hoverOpen();
         }}
       >
-        {open ? (
-          <motion.div
-            data-panel
-            onFocusCapture={(e) => {
-              // Typing pins the panel (and makes the window key).
-              if (isTyping(e.target)) pin();
-            }}
-            initial={{ opacity: 0, scaleX: pillW / PANEL_W, scaleY: 0.12 }}
-            animate={{ opacity: 1, scaleX: 1, scaleY: 1 }}
-            transition={SPRING}
-            className="relative rounded-b-[30px] px-[18px] pb-3.5 text-text shadow-[0_24px_60px_rgba(0,0,0,.6),0_0_0_1px_rgba(255,255,255,.04)]"
-            style={{
-              width: PANEL_W,
-              paddingTop: 16 + notchInset,
-              transformOrigin: "top center",
-              background: config.mode === "notch" ? "#000" : "var(--panel)",
-            }}
-          >
-            <div
-              data-pill-area
-              aria-hidden
-              onClick={closePanel}
-              className="absolute left-1/2 top-0 -translate-x-1/2 cursor-pointer"
-              style={pillArea}
-            />
-            {pending ? (
-              <AbsencePrompt onResolved={() => (pinnedRef.current = false)} />
-            ) : noteFor ? (
-              <NotePrompt onDone={noteDone} />
-            ) : view.kind === "all" ? (
-              <AllProjects onBack={toMain} onCreate={() => setView({ kind: "create", name: "" })} />
-            ) : view.kind === "create" ? (
-              <CreateProject initialName={view.name} onBack={toMain} onDone={toMain} />
-            ) : (
-              <Panel
-                inputRef={searchRef}
-                onCreate={(name) => setView({ kind: "create", name })}
-                onAll={() => setView({ kind: "all" })}
-                onClose={closePanel}
+        {/* popLayout: the closing panel leaves the flow and shrinks into the pill drawn under it. */}
+        <AnimatePresence mode="popLayout" initial={false}>
+          {open && (
+            <motion.div
+              key="panel"
+              data-panel
+              onFocusCapture={(e) => {
+                // Typing pins the panel (and makes the window key).
+                if (isTyping(e.target)) pin();
+              }}
+              initial={{ opacity: 0, scaleX: pillW / PANEL_W, scaleY: 0.12 }}
+              animate={{ opacity: 1, scaleX: 1, scaleY: 1 }}
+              exit={{ opacity: 0, scaleX: pillW / PANEL_W, scaleY: 0.12, transition: CLOSE_EASE }}
+              transition={SPRING}
+              className="relative rounded-b-[30px] px-[18px] pb-3.5 text-text shadow-[0_24px_60px_rgba(0,0,0,.6),0_0_0_1px_rgba(255,255,255,.04)]"
+              style={{
+                width: PANEL_W,
+                paddingTop: 16 + notchInset,
+                transformOrigin: "top center",
+                background: config.mode === "notch" ? "#000" : "var(--panel)",
+              }}
+            >
+              <div
+                data-pill-area
+                aria-hidden
+                onClick={closePanel}
+                className="absolute left-1/2 top-0 -translate-x-1/2 cursor-pointer"
+                style={pillArea}
               />
-            )}
-          </motion.div>
-        ) : (
-          <Pill config={config} snapshot={snapshot} sessionMs={sessionMs} grown={grown} onClick={() => openPanel(false)} />
-        )}
+              {pending ? (
+                <AbsencePrompt onResolved={() => (pinnedRef.current = false)} />
+              ) : noteFor ? (
+                <NotePrompt onDone={noteDone} />
+              ) : view.kind === "all" ? (
+                <AllProjects onBack={toMain} onCreate={() => setView({ kind: "create", name: "" })} />
+              ) : view.kind === "create" ? (
+                <CreateProject initialName={view.name} onBack={toMain} onDone={toMain} />
+              ) : (
+                <Panel
+                  inputRef={searchRef}
+                  onCreate={(name) => setView({ kind: "create", name })}
+                  onAll={() => setView({ kind: "all" })}
+                  onClose={closePanel}
+                />
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
+        {!open && <Pill config={config} snapshot={snapshot} sessionMs={sessionMs} grown={grown} onClick={() => openPanel(false)} />}
       </div>
       {/* Collapsed: right under the pill, so the hit rect has no gap over the desktop. */}
       <div

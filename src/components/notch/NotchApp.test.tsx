@@ -288,7 +288,8 @@ describe("NotchApp hit rect", () => {
   const W = 520;
   const sizeOf = (el: HTMLElement): [number, number] => {
     if (el.dataset.hit === "surface") {
-      const c = el.firstElementChild as HTMLElement | null;
+      // The in-flow child is the last one: a closing panel is popped out (absolute) before the pill.
+      const c = el.lastElementChild as HTMLElement | null;
       if (!c) return [0, 0];
       if (c.hasAttribute("data-panel")) return [440, 500];
       const kind = c.dataset.pill;
