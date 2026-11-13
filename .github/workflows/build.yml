@@ -61,9 +61,35 @@ jobs:
           path: ${{ matrix.bundle_glob }}
           if-no-files-found: error
 
-  release:
+  # One draft release per tag, created once; the matrix jobs upload into it (no duplicate drafts).
+  create-release:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: build
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.create.outputs.release_id }}
+    steps:
+      - id: create
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          id=$(gh api "repos/${GITHUB_REPOSITORY}/releases" --paginate \
+            --jq ".[] | select(.tag_name == \"$TAG\") | .id" | head -n1)
+          if [ -z "$id" ]; then
+            id=$(gh api "repos/${GITHUB_REPOSITORY}/releases" -X POST \
+              -f tag_name="$TAG" \
+              -f name="Timewatch $TAG" \
+              -f body="Build sem assinatura da Apple/Microsoft (macOS: assinatura ad-hoc). Veja o README para instalar." \
+              -F draft=true -F prerelease=false --jq .id)
+          fi
+          echo "release_id=$id" >> "$GITHUB_OUTPUT"
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: create-release
     permissions:
       contents: write
     strategy:
@@ -96,10 +122,9 @@ jobs:
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Ad-hoc signature (also set in tauri.conf.json): without any signature, downloaded
+          # Apple Silicon builds are reported as "damaged" instead of "unidentified developer".
+          APPLE_SIGNING_IDENTITY: "-"
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: Timewatch ${{ github.ref_name }}
-          releaseBody: Build sem assinatura. Veja o README para instalar.
-          releaseDraft: true
-          prerelease: false
+          releaseId: ${{ needs.create-release.outputs.release_id }}
           args: ${{ matrix.args }}
