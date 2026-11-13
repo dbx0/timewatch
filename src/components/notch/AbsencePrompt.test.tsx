@@ -41,6 +41,33 @@ describe("AbsencePrompt", () => {
     expect(api.resolveAbsence).toHaveBeenCalledWith({ kind: "keep" });
   });
 
+  it("a double click sends one resolve_absence and disables the answers meanwhile", async () => {
+    let done!: () => void;
+    vi.mocked(api.resolveAbsence).mockImplementation(() => new Promise<void>((r) => (done = r)));
+    const onResolved = vi.fn();
+    render(<AbsencePrompt onResolved={onResolved} />);
+    const btn = screen.getByRole("button", { name: "Manter" });
+    act(() => {
+      fireEvent.click(btn);
+      fireEvent.click(btn);
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Descontar" }));
+    fireEvent.click(screen.getByRole("button", { name: "App Mobile" }));
+    expect(api.resolveAbsence).toHaveBeenCalledTimes(1);
+    expect((screen.getByRole("button", { name: "Descontar" }) as HTMLButtonElement).disabled).toBe(true);
+    await act(async () => done());
+    expect(onResolved).toHaveBeenCalledTimes(1);
+    expect((screen.getByRole("button", { name: "Descontar" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("answers again after a failed resolve", async () => {
+    vi.mocked(api.resolveAbsence).mockRejectedValueOnce("falhou");
+    render(<AbsencePrompt onResolved={() => {}} />);
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Manter" })));
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Manter" })));
+    expect(api.resolveAbsence).toHaveBeenCalledTimes(2);
+  });
+
   it("chips move the time to another project, excluding the absent one", async () => {
     render(<AbsencePrompt onResolved={() => {}} />);
     expect(screen.queryByRole("button", { name: "Portal B2B" })).toBeNull();

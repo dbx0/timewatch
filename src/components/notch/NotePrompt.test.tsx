@@ -196,6 +196,20 @@ describe("note prompt after stop/pause", () => {
     expect((screen.getByRole("textbox", { name: "Nota" }) as HTMLTextAreaElement).value).toBe("deploy");
     expect(useToasts.getState().current?.message).toBe("Erro ao acessar os dados: disco cheio");
   });
+
+  it("Enter then Salvar while saving sends the note once", async () => {
+    let done!: () => void;
+    vi.mocked(api.setEntryNote).mockImplementation(() => new Promise((r) => (done = () => r({} as never))));
+    await mount();
+    await openAndStop(block(30));
+    const field = screen.getByRole("textbox", { name: "Nota" });
+    fireEvent.change(field, { target: { value: "deploy" } });
+    fireEvent.keyDown(field, { key: "Enter" });
+    fireEvent.click(screen.getByRole("button", { name: "Salvar" }));
+    expect(api.setEntryNote).toHaveBeenCalledTimes(1);
+    await act(async () => done());
+    expect(screen.queryByText("O que você fez?")).toBeNull();
+  });
 });
 
 function hoverIn() {

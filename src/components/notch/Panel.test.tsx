@@ -41,6 +41,26 @@ describe("Panel", () => {
     expect(api.pauseClock).not.toHaveBeenCalled();
   });
 
+  it("a footer window that fails to open toasts the error and keeps the panel", async () => {
+    vi.mocked(api.openWindow).mockRejectedValueOnce("janela indisponível");
+    useTracker.getState().setSnapshot(snapshot());
+    const onClose = vi.fn();
+    render(<Panel {...props} onClose={onClose} />);
+    await act(async () => fireEvent.click(screen.getByText("Configurações")));
+    expect(api.openWindow).toHaveBeenCalledWith("settings");
+    expect(onClose).not.toHaveBeenCalled();
+    expect(useToasts.getState().current?.message).toBe("janela indisponível");
+  });
+
+  it("a footer window that opens closes the panel", async () => {
+    useTracker.getState().setSnapshot(snapshot());
+    const onClose = vi.fn();
+    render(<Panel {...props} onClose={onClose} />);
+    await act(async () => fireEvent.click(screen.getByText("Ver horas da semana")));
+    expect(api.openWindow).toHaveBeenCalledWith("report");
+    expect(onClose).toHaveBeenCalled();
+  });
+
   it("number keys switch to the recent with that shortcut", () => {
     useTracker.getState().setSnapshot(snapshot());
     render(<Panel {...props} />);

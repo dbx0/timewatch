@@ -2,6 +2,8 @@ import { useEffect, useState, type Ref } from "react";
 import { useT } from "../../i18n";
 import { openWindow } from "../../lib/api";
 import { clientLabel } from "../../lib/client";
+import { errMsg } from "../../lib/dates";
+import { toast } from "../../stores/toast";
 import { clock } from "../../lib/format";
 import type { WindowKind } from "../../lib/types";
 import { liveSessionMs, liveTodayMs, useTracker } from "../../stores/tracker";
@@ -51,10 +53,9 @@ export function Panel({ onCreate, onAll, onClose, inputRef }: Props) {
   if (!snapshot) return null;
   const { status, sessionProject: p } = snapshot;
 
-  const footer = (kind: WindowKind) => () => {
-    void openWindow(kind).catch(() => {});
-    onClose();
-  };
+  // Close once the window is up; if it fails, keep the panel and say why.
+  const footer = (kind: WindowKind) => () =>
+    void openWindow(kind).then(onClose, (e: unknown) => toast(errMsg(e)));
 
   return (
     <>

@@ -11,6 +11,7 @@ import { HOVER_FALLBACK_MS, NotchApp } from "./NotchApp";
 import { resetFocusRequests } from "./keyboard";
 import { toast, useToasts } from "../../stores/toast";
 import { setLang } from "../../i18n";
+import { useNotePrompt } from "../../stores/notePrompt";
 
 const notch: OverlayConfig = { mode: "notch", notchWidth: 220, notchHeight: 38, pillWidth: 460, pillHeight: 38 };
 const strip: OverlayConfig = { mode: "strip", notchWidth: null, notchHeight: null, pillWidth: 160, pillHeight: 6 };
@@ -154,6 +155,48 @@ describe("NotchApp", () => {
     act(() => focusSearch());
     expect(state()).toBe("open");
     expect(document.activeElement).toBe(screen.getByPlaceholderText("Trocar para… ou criar projeto"));
+  });
+
+  it("a focus-search request that the note prompt cannot serve does not focus the search on a later hover open", async () => {
+    await mount();
+    act(() => useNotePrompt.getState().ask({ id: 5, projectId: 2, start: 0, end: 3_600_000 }));
+    expect(state()).toBe("open");
+    act(() => focusSearch());
+    expect(document.querySelector("[data-note-prompt]")).toBeTruthy();
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(state()).toBe("closed");
+    act(() => (document.activeElement as HTMLElement | null)?.blur());
+    hoverIn();
+    expect(state()).toBe("open");
+    expect(document.activeElement).not.toBe(screen.getByPlaceholderText("Trocar para… ou criar projeto"));
+  });
+
+  it("a focus-search request is dropped when the panel closes before it is served", async () => {
+    await mount();
+    act(() =>
+      changed(snapshot({ pendingAbsence: { start: 0, end: 3_600_000, reason: "sleep", projectId: 2 } })),
+    );
+    act(() => focusSearch());
+    act(() => changed(snapshot()));
+    expect(state()).toBe("closed");
+    hoverIn();
+    expect(state()).toBe("open");
+    expect(document.activeElement).not.toBe(screen.getByPlaceholderText("Trocar para… ou criar projeto"));
+  });
+
+  it("the closing panel lets clicks through: clicking the pill during the exit reopens", async () => {
+    await mount();
+    act(() => expanded(true));
+    fireEvent.click(document.querySelector("[data-pill-area]") as HTMLElement);
+    expect(state()).toBe("closed");
+    const exiting = document.querySelector("[data-panel]") as HTMLElement | null;
+    // Still on screen while it shrinks into the pill, but inert to the pointer.
+    expect(exiting?.hasAttribute("data-exiting")).toBe(true);
+    expect(exiting?.style.pointerEvents).toBe("none");
+    fireEvent.click(document.querySelector("[data-pill=notch]") as HTMLElement);
+    expect(state()).toBe("open");
+    const live = [...document.querySelectorAll("[data-panel]")].find((e) => !e.hasAttribute("data-exiting")) as HTMLElement;
+    expect(live.style.pointerEvents).toBe("");
   });
 
   it("footer action opens the window and closes the panel", async () => {

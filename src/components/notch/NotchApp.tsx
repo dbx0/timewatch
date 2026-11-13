@@ -1,4 +1,4 @@
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, useIsPresent, type HTMLMotionProps } from "framer-motion";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import * as api from "../../lib/api";
 import type { HitRect, OverlayConfig } from "../../lib/types";
@@ -40,7 +40,23 @@ const FALLBACK: OverlayConfig = { mode: "strip", notchWidth: null, notchHeight: 
 
 type View = { kind: "main" } | { kind: "all" } | { kind: "create"; name: string };
 
-const sameDay = (a: number, b: number) => new Date(a).toDateString() === new Date(b).toDateString();
+/**
+ * The panel's motion surface. While it shrinks back into the pill (exit) it is drawn over the
+ * pill but must not take clicks: they belong to the pill underneath (click to reopen).
+ */
+function PanelSurface({ ref, style, ...rest }: HTMLMotionProps<"div"> & { ref?: React.Ref<HTMLDivElement> }) {
+  const present = useIsPresent();
+  return (
+    <motion.div
+      ref={ref}
+      {...rest}
+      data-exiting={present ? undefined : ""}
+      style={{ ...style, pointerEvents: present ? undefined : "none" }}
+    />
+  );
+}
+
+const sameDay =(a: number, b: number) => new Date(a).toDateString() === new Date(b).toDateString();
 
 export function NotchApp() {
   const L = useT();
@@ -108,6 +124,8 @@ export function NotchApp() {
 
   const closePanel = useCallback(() => {
     clearTimers();
+    // A search-focus request is one-shot: never carry it over to a later (hover) open.
+    wantSearchFocus.current = false;
     // The absence question and the note prompt keep the panel open until answered.
     if (pendingRef.current || noteRef.current) return;
     pinnedRef.current = false;
@@ -189,7 +207,8 @@ export function NotchApp() {
         if (isFocusEcho()) return;
         openPanel(true);
         setView({ kind: "main" });
-        wantSearchFocus.current = true;
+        // The absence question and the note prompt replace the search: nothing to focus.
+        wantSearchFocus.current = !pendingRef.current && !noteRef.current;
         setFocusReq((n) => n + 1);
       }),
     ];
@@ -202,9 +221,10 @@ export function NotchApp() {
 
   // Global shortcut: focus the search field once it is rendered (one-shot request).
   useEffect(() => {
-    if (!wantSearchFocus.current || !searchRef.current) return;
+    if (!wantSearchFocus.current || !open) return;
+    // Served now or dropped: a field that is not there (another view) must not grab focus later.
     wantSearchFocus.current = false;
-    searchRef.current.focus();
+    searchRef.current?.focus();
   }, [focusReq, open, view]);
 
   /** Dismisses the note prompt without saving (the note can be added later in the day view). */
@@ -334,7 +354,7 @@ export function NotchApp() {
         {/* popLayout: the closing panel leaves the flow and shrinks into the pill drawn under it. */}
         <AnimatePresence mode="popLayout" initial={false}>
           {open && (
-            <motion.div
+            <PanelSurface
               key="panel"
               data-panel
               onFocusCapture={(e) => {
@@ -376,7 +396,7 @@ export function NotchApp() {
                   onClose={closePanel}
                 />
               )}
-            </motion.div>
+            </PanelSurface>
           )}
         </AnimatePresence>
         {!open && <Pill config={config} snapshot={snapshot} sessionMs={sessionMs} grown={grown} onClick={() => openPanel(false)} />}

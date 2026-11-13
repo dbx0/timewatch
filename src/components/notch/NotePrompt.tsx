@@ -14,6 +14,7 @@ export function NotePrompt({ onDone }: { onDone: () => void }) {
   const c = useNotePrompt((st) => st.closed);
   const project = useTracker((st) => st.snapshot?.projects.find((p) => p.id === c?.projectId));
   const field = useRef<HTMLTextAreaElement>(null);
+  const saving = useRef(false);
   const id = c?.id;
 
   // A user action (pause/stop click), so the overlay may take the keyboard.
@@ -47,8 +48,15 @@ export function NotePrompt({ onDone }: { onDone: () => void }) {
           }
         }}
         onSave={async (note) => {
-          // Keep the prompt (and the text) when saving fails; the error is toasted.
-          if (note && !(await saveNote(c.id, note))) return;
+          // One save at a time (Enter then a click must not send it twice).
+          if (saving.current) return;
+          saving.current = true;
+          try {
+            // Keep the prompt (and the text) when saving fails; the error is toasted.
+            if (note && !(await saveNote(c.id, note))) return;
+          } finally {
+            saving.current = false;
+          }
           finish();
         }}
       />
