@@ -122,7 +122,11 @@ pub fn rel_cursor(cursor: (f64, f64), cursor_scale: f64, l: &OverlayLayout) -> (
 }
 
 /// Index of the monitor named `want`, else the primary, else the first.
-pub fn pick_monitor(names: &[Option<String>], primary: Option<usize>, want: Option<&str>) -> Option<usize> {
+pub fn pick_monitor(
+    names: &[Option<String>],
+    primary: Option<usize>,
+    want: Option<&str>,
+) -> Option<usize> {
     if names.is_empty() {
         return None;
     }
@@ -155,7 +159,11 @@ impl OverlayState {
     }
 
     pub fn config(&self) -> Option<OverlayConfig> {
-        self.layout.lock().unwrap_or_else(|p| p.into_inner()).as_ref().map(|(l, _)| l.into())
+        self.layout
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .as_ref()
+            .map(|(l, _)| l.into())
     }
 }
 
@@ -165,21 +173,25 @@ pub fn create_overlay(app: &AppHandle) -> Result<(), String> {
         return Ok(());
     }
     app.manage(OverlayState::default());
-    let win = WebviewWindowBuilder::new(app, OVERLAY_LABEL, WebviewUrl::App(window_url(OVERLAY_LABEL, current_lang(app)).into()))
-        .title("Timewatch")
-        .inner_size(OVERLAY_W, OVERLAY_H)
-        .transparent(true)
-        .decorations(false)
-        .resizable(false)
-        .skip_taskbar(true)
-        .always_on_top(true)
-        .focused(false)
-        .focusable(false)
-        .shadow(false)
-        .accept_first_mouse(true)
-        .visible(false)
-        .build()
-        .map_err(|e| e.to_string())?;
+    let win = WebviewWindowBuilder::new(
+        app,
+        OVERLAY_LABEL,
+        WebviewUrl::App(window_url(OVERLAY_LABEL, current_lang(app)).into()),
+    )
+    .title("Timewatch")
+    .inner_size(OVERLAY_W, OVERLAY_H)
+    .transparent(true)
+    .decorations(false)
+    .resizable(false)
+    .skip_taskbar(true)
+    .always_on_top(true)
+    .focused(false)
+    .focusable(false)
+    .shadow(false)
+    .accept_first_mouse(true)
+    .visible(false)
+    .build()
+    .map_err(|e| e.to_string())?;
     platform::set_ignore_cursor_events(&win, true);
     platform::make_overlay(&win)?;
     reposition_overlay(app);
@@ -191,13 +203,22 @@ pub fn create_overlay(app: &AppHandle) -> Result<(), String> {
 
 /// Places the overlay on `settings.overlay_monitor` (by name) or the primary monitor.
 pub fn reposition_overlay(app: &AppHandle) {
-    let Some(win) = app.get_webview_window(OVERLAY_LABEL) else { return };
+    let Some(win) = app.get_webview_window(OVERLAY_LABEL) else {
+        return;
+    };
     let monitors = app.available_monitors().unwrap_or_default();
     let primary = app.primary_monitor().ok().flatten();
-    let want = app.try_state::<AppState>().and_then(|s| s.lock().settings().ok()).and_then(|s| s.overlay_monitor);
+    let want = app
+        .try_state::<AppState>()
+        .and_then(|s| s.lock().settings().ok())
+        .and_then(|s| s.overlay_monitor);
     let names: Vec<Option<String>> = monitors.iter().map(|m| m.name().cloned()).collect();
-    let primary_idx = primary.as_ref().and_then(|p| monitors.iter().position(|m| m.position() == p.position()));
-    let Some(m) = pick_monitor(&names, primary_idx, want.as_deref()).map(|i| &monitors[i]) else { return };
+    let primary_idx = primary
+        .as_ref()
+        .and_then(|p| monitors.iter().position(|m| m.position() == p.position()));
+    let Some(m) = pick_monitor(&names, primary_idx, want.as_deref()).map(|i| &monitors[i]) else {
+        return;
+    };
 
     let notch = platform::notch_info(app, m);
     let (pos, size) = (m.position(), m.size());
@@ -207,7 +228,9 @@ pub fn reposition_overlay(app: &AppHandle) {
         m.scale_factor(),
         notch,
     );
-    let primary_scale = primary.as_ref().map_or(m.scale_factor(), |p| p.scale_factor());
+    let primary_scale = primary
+        .as_ref()
+        .map_or(m.scale_factor(), |p| p.scale_factor());
     let cursor_scale = platform::cursor_scale(primary_scale, m.scale_factor());
     platform::position_overlay(&win, &layout);
     eprintln!(
@@ -245,7 +268,13 @@ pub fn expand_overlay(app: &AppHandle, focus: bool) {
     if let Some(state) = app.try_state::<OverlayState>() {
         state.set_expanded(true);
     }
-    let _ = app.emit("overlay://expanded", ExpandedEvent { expanded: true, focus });
+    let _ = app.emit(
+        "overlay://expanded",
+        ExpandedEvent {
+            expanded: true,
+            focus,
+        },
+    );
 }
 
 pub fn collapse_overlay(app: &AppHandle) {
@@ -253,7 +282,13 @@ pub fn collapse_overlay(app: &AppHandle) {
         state.set_expanded(false);
     }
     platform::unfocus_overlay(app);
-    let _ = app.emit("overlay://expanded", ExpandedEvent { expanded: false, focus: false });
+    let _ = app.emit(
+        "overlay://expanded",
+        ExpandedEvent {
+            expanded: false,
+            focus: false,
+        },
+    );
 }
 
 /// Expands the overlay and gives it keyboard focus (global shortcut, search field click).
@@ -269,16 +304,22 @@ fn start_hover_poll(app: AppHandle) {
     let mut rest = intent::RestDetector::new();
     std::thread::spawn(move || loop {
         std::thread::sleep(HOVER_POLL);
-        let (Some(state), Some(win)) = (app.try_state::<OverlayState>(), app.get_webview_window(OVERLAY_LABEL))
+        let (Some(state), Some(win)) = (
+            app.try_state::<OverlayState>(),
+            app.get_webview_window(OVERLAY_LABEL),
+        ) else {
+            continue;
+        };
+        let Some((layout, cursor_scale)) = *state.layout.lock().unwrap_or_else(|p| p.into_inner())
         else {
             continue;
         };
-        let Some((layout, cursor_scale)) = *state.layout.lock().unwrap_or_else(|p| p.into_inner()) else {
+        let Ok(c) = app.cursor_position() else {
             continue;
         };
-        let Ok(c) = app.cursor_position() else { continue };
         let rect = *state.hit_rect.lock().unwrap_or_else(|p| p.into_inner());
-        let inside = rect.is_some_and(|r| r.contains(rel_cursor((c.x, c.y), cursor_scale, &layout)));
+        let inside =
+            rect.is_some_and(|r| r.contains(rel_cursor((c.x, c.y), cursor_scale, &layout)));
         if state.hovering.swap(inside, Ordering::SeqCst) != inside {
             platform::set_ignore_cursor_events(&win, !inside);
             let _ = app.emit("overlay://hover", inside);
@@ -303,9 +344,19 @@ fn start_monitor_poll(app: AppHandle) {
                 .available_monitors()
                 .unwrap_or_default()
                 .iter()
-                .map(|m| (m.name().cloned(), *m.position(), *m.size(), m.scale_factor().to_bits()))
+                .map(|m| {
+                    (
+                        m.name().cloned(),
+                        *m.position(),
+                        *m.size(),
+                        m.scale_factor().to_bits(),
+                    )
+                })
                 .collect();
-            let want = app.try_state::<AppState>().and_then(|s| s.lock().settings().ok()).and_then(|s| s.overlay_monitor);
+            let want = app
+                .try_state::<AppState>()
+                .and_then(|s| s.lock().settings().ok())
+                .and_then(|s| s.overlay_monitor);
             format!("{monitors:?}{want:?}")
         };
         let mut last = signature(&app);
@@ -362,13 +413,14 @@ pub fn create_or_focus(app: &AppHandle, kind: &str) -> Result<(), String> {
         sync_activation_policy(app, None);
         return win.set_focus().map_err(|e| e.to_string());
     }
-    let mut b = WebviewWindowBuilder::new(app, kind, WebviewUrl::App(window_url(kind, lang).into()))
-        .title(title)
-        .inner_size(w, h)
-        .resizable(resizable)
-        .decorations(false)
-        .transparent(true)
-        .shadow(true);
+    let mut b =
+        WebviewWindowBuilder::new(app, kind, WebviewUrl::App(window_url(kind, lang).into()))
+            .title(title)
+            .inner_size(w, h)
+            .resizable(resizable)
+            .decorations(false)
+            .transparent(true)
+            .shadow(true);
     if center {
         b = b.center();
     }
@@ -391,8 +443,14 @@ const NORMAL_WINDOWS: [&str; 3] = ["report", "settings", "onboarding"];
 pub fn sync_activation_policy(app: &AppHandle, closing: Option<&str>) {
     #[cfg(target_os = "macos")]
     {
-        let any = NORMAL_WINDOWS.iter().any(|l| Some(*l) != closing && app.get_webview_window(l).is_some());
-        let policy = if any { tauri::ActivationPolicy::Regular } else { tauri::ActivationPolicy::Accessory };
+        let any = NORMAL_WINDOWS
+            .iter()
+            .any(|l| Some(*l) != closing && app.get_webview_window(l).is_some());
+        let policy = if any {
+            tauri::ActivationPolicy::Regular
+        } else {
+            tauri::ActivationPolicy::Accessory
+        };
         let _ = app.set_activation_policy(policy);
     }
     #[cfg(not(target_os = "macos"))]
@@ -429,7 +487,10 @@ mod tests {
     #[test]
     fn pill_mode_notch_when_notch_present() {
         // Pill is as tall as the notch and has a 120 px "ear" on each side.
-        let notch = NotchInfo { width: 220.0, height: 38.0 };
+        let notch = NotchInfo {
+            width: 220.0,
+            height: 38.0,
+        };
         let l = overlay_frame((0.0, 0.0), (3600.0, 2338.0), 2.0, Some(notch));
         assert_eq!(l.mode, PillMode::Notch);
         assert_eq!(l.notch, Some(notch));
@@ -460,8 +521,14 @@ mod tests {
     #[test]
     fn window_url_carries_view_and_lang() {
         use crate::i18n::Lang;
-        assert_eq!(window_url("report", Lang::En), "index.html?view=report&lang=en");
-        assert_eq!(window_url("notch", Lang::PtBr), "index.html?view=notch&lang=pt-BR");
+        assert_eq!(
+            window_url("report", Lang::En),
+            "index.html?view=report&lang=en"
+        );
+        assert_eq!(
+            window_url("notch", Lang::PtBr),
+            "index.html?view=notch&lang=pt-BR"
+        );
     }
 
     #[test]
@@ -476,7 +543,10 @@ mod tests {
                 "mode": "strip", "notchWidth": null, "notchHeight": null, "pillWidth": 160.0, "pillHeight": 6.0
             })
         );
-        let notch = NotchInfo { width: 185.0, height: 32.0 };
+        let notch = NotchInfo {
+            width: 185.0,
+            height: 32.0,
+        };
         let l = overlay_frame((0.0, 0.0), (3024.0, 1964.0), 2.0, Some(notch));
         let v = serde_json::to_value(OverlayConfig::from(&l)).unwrap();
         assert_eq!(
@@ -497,7 +567,11 @@ mod tests {
 
     #[test]
     fn expanded_event_carries_focus_flag() {
-        let v = serde_json::to_value(ExpandedEvent { expanded: true, focus: false }).unwrap();
+        let v = serde_json::to_value(ExpandedEvent {
+            expanded: true,
+            focus: false,
+        })
+        .unwrap();
         assert_eq!(v, serde_json::json!({ "expanded": true, "focus": false }));
     }
 
@@ -512,7 +586,12 @@ mod tests {
 
     #[test]
     fn hit_rect_contains() {
-        let r = HitRect { x: 140.0, y: 0.0, w: 240.0, h: 32.0 };
+        let r = HitRect {
+            x: 140.0,
+            y: 0.0,
+            w: 240.0,
+            h: 32.0,
+        };
         assert!(r.contains((140.0, 0.0)));
         assert!(r.contains((379.9, 31.9)));
         assert!(!r.contains((380.0, 10.0)));
