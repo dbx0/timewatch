@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Popover } from "./Popover";
 import { useT } from "../../i18n";
 
@@ -40,7 +40,8 @@ export function TimePicker({ value, onChange, className = "", minuteStep = 5 }: 
   const [typed, setTyped] = useState("");
   const hRef = useRef<HTMLDivElement>(null);
   const mRef = useRef<HTMLDivElement>(null);
-  const panelRef = useRef<HTMLDivElement>(null);
+  const uid = useId();
+  const optId = (c: "h" | "m", n: number) => `${uid}-${c}${n}`;
 
   const minutes = useMemo(() => {
     const step = Math.max(1, Math.min(30, Math.floor(minuteStep)));
@@ -65,9 +66,11 @@ export function TimePicker({ value, onChange, className = "", minuteStep = 5 }: 
     close();
   };
 
+  // Focus lives on the active column (a listbox) and its aria-activedescendant names the
+  // marked value, so screen readers announce every move.
   useEffect(() => {
-    if (open) panelRef.current?.focus();
-  }, [open]);
+    if (open) (col === 0 ? hRef : mRef).current?.focus();
+  }, [open, col]);
 
   // Keep the selected item centered in each column.
   useEffect(() => {
@@ -123,9 +126,10 @@ export function TimePicker({ value, onChange, className = "", minuteStep = 5 }: 
     }
   };
 
-  const item = (n: number, on: boolean, active: boolean, label: string, pick: () => void) => (
+  const item = (id: string, n: number, on: boolean, active: boolean, label: string, pick: () => void) => (
     <div
       key={n}
+      id={id}
       role="option"
       aria-selected={on}
       aria-label={label}
@@ -137,7 +141,7 @@ export function TimePicker({ value, onChange, className = "", minuteStep = 5 }: 
       {pad(n)}
     </div>
   );
-  const column = "flex h-[180px] w-[72px] flex-col gap-px overflow-y-auto overscroll-contain [scrollbar-width:none]";
+  const column = "outline-none flex h-[180px] w-[72px] flex-col gap-px overflow-y-auto overscroll-contain [scrollbar-width:none]";
 
   return (
     <>
@@ -156,18 +160,18 @@ export function TimePicker({ value, onChange, className = "", minuteStep = 5 }: 
         {typed || value}
       </button>
       <Popover anchor={anchor} open={open} onClose={close}>
-        <div ref={panelRef} data-testid="timepicker-panel" tabIndex={-1} onKeyDown={onPanelKey} className="flex gap-1 outline-none">
-          <div ref={hRef} role="listbox" aria-label={L.ui.hour} className={column}>
+        <div data-testid="timepicker-panel" role="group" aria-label={L.ui.time} onKeyDown={onPanelKey} className="flex gap-1 outline-none">
+          <div ref={hRef} role="listbox" tabIndex={-1} aria-label={L.ui.hour} aria-activedescendant={optId("h", h)} className={column}>
             {HOURS.map((n) =>
-              item(n, n === h, col === 0, `${L.ui.hour} ${pad(n)}`, () => {
+              item(optId("h", n), n, n === h, col === 0, `${L.ui.hour} ${pad(n)}`, () => {
                 setHM([n, m]);
                 setCol(1);
               }),
             )}
           </div>
           <div className="w-px flex-none bg-line" aria-hidden />
-          <div ref={mRef} role="listbox" aria-label={L.ui.minute} className={column}>
-            {minutes.map((n) => item(n, n === m, col === 1, `${L.ui.minute} ${pad(n)}`, () => commit(h, n)))}
+          <div ref={mRef} role="listbox" tabIndex={-1} aria-label={L.ui.minute} aria-activedescendant={optId("m", m)} className={column}>
+            {minutes.map((n) => item(optId("m", n), n, n === m, col === 1, `${L.ui.minute} ${pad(n)}`, () => commit(h, n)))}
           </div>
         </div>
       </Popover>

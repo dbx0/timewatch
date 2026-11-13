@@ -10,6 +10,7 @@ export function AbsenceSection({ settings, update }: SectionProps) {
       <h3 className="mb-1 text-lg font-semibold">{t.absenceTitle}</h3>
       <Row title={t.idle} hint={t.idleHint}>
         <Stepper
+          ariaLabel={t.idle}
           value={settings.idleMin}
           step={5}
           min={5}

@@ -6,6 +6,7 @@ import { Toggle } from "./Toggle";
 import { TimePicker } from "./TimePicker";
 import { Dropdown } from "./Dropdown";
 import { Calendar } from "./Calendar";
+import { ColorPicker } from "./ColorPicker";
 
 describe("Stepper", () => {
   it("clamps to min and max", () => {
@@ -133,6 +134,26 @@ describe("TimePicker", () => {
   });
 });
 
+describe("TimePicker accessibility", () => {
+  it("focuses the active column, whose aria-activedescendant follows the marked value", () => {
+    render(<TimePicker value="09:30" onChange={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: "09:30" }));
+    expect(screen.getByRole("group", { name: "Horário" })).toBeTruthy();
+    const hours = screen.getByRole("listbox", { name: "Hora" });
+    const minutes = screen.getByRole("listbox", { name: "Minuto" });
+    expect(document.activeElement).toBe(hours);
+    const active = (lb: HTMLElement) => document.getElementById(lb.getAttribute("aria-activedescendant")!);
+    expect(active(hours)).toBe(screen.getByRole("option", { name: "Hora 09" }));
+    fireEvent.keyDown(hours, { key: "ArrowDown" });
+    expect(active(hours)).toBe(screen.getByRole("option", { name: "Hora 10" }));
+    expect(active(hours)?.getAttribute("aria-selected")).toBe("true");
+    fireEvent.keyDown(hours, { key: "ArrowRight" });
+    expect(document.activeElement).toBe(minutes);
+    fireEvent.keyDown(minutes, { key: "ArrowDown" });
+    expect(active(minutes)).toBe(screen.getByRole("option", { name: "Minuto 35" }));
+  });
+});
+
 describe("Stepper compact", () => {
   it("fills its container with 28px buttons", () => {
     render(<Stepper compact value={8} step={0.5} min={0} max={24} onChange={() => {}} />);
@@ -159,6 +180,60 @@ describe("Dropdown", () => {
     fireEvent.keyDown(list, { key: "ArrowDown" });
     fireEvent.keyDown(list, { key: "Enter" });
     expect(onChange).toHaveBeenCalledWith("b");
+  });
+});
+
+describe("Dropdown scrolling", () => {
+  it("scrolls the active option into view as the arrows move", () => {
+    const spy = vi.fn();
+    Element.prototype.scrollIntoView = spy;
+    try {
+      const options = Array.from({ length: 30 }, (_, i) => ({ value: i, label: `Opção ${i}` }));
+      render(<Dropdown value={0} options={options} onChange={() => {}} />);
+      fireEvent.click(screen.getByRole("button", { name: /Opção 0/ }));
+      spy.mockClear();
+      const list = screen.getByRole("listbox");
+      fireEvent.keyDown(list, { key: "End" });
+      expect(spy).toHaveBeenLastCalledWith({ block: "nearest" });
+      expect(spy.mock.contexts[spy.mock.contexts.length - 1]).toBe(screen.getByRole("option", { name: /Opção 29/ }));
+    } finally {
+      delete (Element.prototype as Partial<Element>).scrollIntoView;
+    }
+  });
+
+  it("works where scrollIntoView does not exist (jsdom)", () => {
+    expect(Element.prototype.scrollIntoView).toBeUndefined();
+    render(<Dropdown value="a" options={[{ value: "a", label: "Alfa" }, { value: "b", label: "Beta" }]} onChange={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: /Alfa/ }));
+    fireEvent.keyDown(screen.getByRole("listbox"), { key: "ArrowDown" });
+    expect(screen.getByRole("listbox").getAttribute("aria-activedescendant")).toMatch(/-1$/);
+  });
+});
+
+describe("Stepper accessibility", () => {
+  it("names the value, takes focus and steps with ArrowUp/Down", () => {
+    const onChange = vi.fn();
+    render(<Stepper value={8} step={0.5} min={0} max={24} ariaLabel="Segunda" format={(v) => `${v}h`} onChange={onChange} />);
+    const spin = screen.getByRole("spinbutton", { name: "Segunda" });
+    expect(spin.tabIndex).toBe(0);
+    expect(spin.getAttribute("aria-valuetext")).toBe("8h");
+    spin.focus();
+    fireEvent.keyDown(spin, { key: "ArrowUp" });
+    expect(onChange).toHaveBeenLastCalledWith(8.5);
+    fireEvent.keyDown(spin, { key: "ArrowDown" });
+    expect(onChange).toHaveBeenLastCalledWith(7.5);
+  });
+});
+
+describe("ColorPicker", () => {
+  it("names palette colors in the UI language, never the raw hex", () => {
+    render(<ColorPicker value="#5aa9ff" onChange={() => {}} />);
+    expect(screen.getByRole("radiogroup", { name: "Cor" })).toBeTruthy();
+    expect(screen.getByRole("radio", { name: "Azul" }).getAttribute("aria-checked")).toBe("true");
+    expect(screen.queryByRole("radio", { name: /^#/ })).toBeNull();
+    cleanup();
+    render(<ColorPicker value="#123456" colors={["#123456", "#abcdef"]} onChange={() => {}} />);
+    expect(screen.getByRole("radio", { name: "Cor 2" })).toBeTruthy();
   });
 });
 

@@ -48,6 +48,11 @@ export function Dropdown<T extends string | number>({ value, options, onChange, 
     if (open) listRef.current?.focus();
   });
 
+  // Keep the keyboard-active option visible in a long, scrolling list (jsdom has no scrollIntoView).
+  useEffect(() => {
+    if (open) document.getElementById(`${id}-${active}`)?.scrollIntoView?.({ block: "nearest" });
+  }, [open, active, id]);
+
   const onListKey = (e: React.KeyboardEvent) => {
     if (e.key === "ArrowDown") {
       e.preventDefault();

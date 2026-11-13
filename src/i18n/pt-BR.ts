@@ -16,6 +16,10 @@ export const ptBR = {
     save: "Salvar",
     prevMonth: "Mês anterior",
     nextMonth: "Próximo mês",
+    /** Names of the project palette colors, in palette order. */
+    colors: ["Verde", "Azul", "Laranja", "Roxo", "Rosa", "Turquesa", "Amarelo", "Coral", "Verde-limão", "Anil", "Rosa-claro", "Cinza"],
+    colorN: (n: number) => `Cor ${n}`,
+    time: "Horário",
   },
   titlebar: {
     minimize: "Minimizar",

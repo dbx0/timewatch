@@ -23,6 +23,16 @@ describe("JornadaEditor", () => {
     expect(cards.map((c) => c.firstElementChild?.textContent)).toEqual(["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]);
   });
 
+  it("each day's value is a focusable spinbutton named after the weekday; arrows step it", () => {
+    const onChange = vi.fn();
+    render(<JornadaEditor value={week} onChange={onChange} />);
+    const mon = screen.getByRole("spinbutton", { name: "Segunda" });
+    expect(mon.tabIndex).toBe(0);
+    expect(screen.getByRole("spinbutton", { name: "Domingo" })).toBeTruthy();
+    fireEvent.keyDown(mon, { key: "ArrowUp" });
+    expect(onChange).toHaveBeenCalledWith([8.5, 8, 8, 8, 8, 0, 0]);
+  });
+
   it("steps one day by half an hour", () => {
     const onChange = vi.fn();
     render(<JornadaEditor value={week} onChange={onChange} />);

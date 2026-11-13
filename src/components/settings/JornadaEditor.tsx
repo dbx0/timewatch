@@ -28,6 +28,7 @@ export function JornadaEditor({ value, onChange }: Props) {
             <div className="mb-1.5 text-xs text-mute">{d}</div>
             <Stepper
               compact
+              ariaLabel={L.report.weekdaysLong[i]}
               value={value[i] ?? 0}
               step={0.5}
               min={0}

@@ -38,7 +38,7 @@ describe("i18n tables", () => {
       en: [
         "ui.ok", "notch.noteSubtitle", "settings.min15", "settings.min30", "onboarding.lunch30",
         "onboarding.lunch60", "onboarding.lunch90", "report.exportCsv", "report.exportHtml", "report.total",
-        "weekdaysInitial[1]", "weekdaysInitial[5]",
+        "weekdaysInitial[1]", "weekdaysInitial[5]", "ui.colors[7]",
       ],
       // Spanish shares many words with Portuguese; each of these was checked as correct Spanish.
       es: [
@@ -53,6 +53,7 @@ describe("i18n tables", () => {
         "report.weekdaysLong[6]", "dayMonth", "weekdaysShort[5]", "weekdaysShort[6]", "weekdaysInitial[5]",
         "weekdaysInitial[6]", "monthsShort[2]", "monthsShort[3]", "monthsShort[5]", "monthsShort[6]",
         "monthsShort[7]", "monthsShort[10]", "monthsLong[3]", "monthsLong[7]",
+        "ui.colors[0]", "ui.colors[1]", "ui.colors[4]", "ui.colors[5]", "ui.colors[7]",
       ],
     };
     const leaves = (o: unknown, path = ""): [string, string][] => {

@@ -1,4 +1,5 @@
 import { useRef } from "react";
+import { useT } from "../../i18n";
 
 /** Project identity colors (dots and swatches only). */
 export const PROJECT_PALETTE = [
@@ -13,14 +14,20 @@ interface Props {
 }
 
 export function ColorPicker({ value, colors = PROJECT_PALETTE, onChange }: Props) {
+  const L = useT();
   const refs = useRef<(HTMLDivElement | null)[]>([]);
+  /** Palette colors by name, any other by position; never the raw hex. */
+  const nameOf = (c: string, i: number) => {
+    const k = PROJECT_PALETTE.indexOf(c);
+    return k >= 0 ? L.ui.colors[k] : L.ui.colorN(i + 1);
+  };
   const move = (i: number) => {
     const n = (i + colors.length) % colors.length;
     onChange(colors[n]);
     refs.current[n]?.focus();
   };
   return (
-    <div role="radiogroup" className="grid grid-cols-6 gap-2 p-2">
+    <div role="radiogroup" aria-label={L.notch.color} className="grid grid-cols-6 gap-2 p-2">
       {colors.map((c, i) => {
         const on = c === value;
         return (
@@ -29,7 +36,7 @@ export function ColorPicker({ value, colors = PROJECT_PALETTE, onChange }: Props
             ref={(el) => { refs.current[i] = el; }}
             role="radio"
             aria-checked={on}
-            aria-label={c}
+            aria-label={nameOf(c, i)}
             tabIndex={on || (!colors.includes(value) && i === 0) ? 0 : -1}
             onClick={() => onChange(c)}
             onKeyDown={(e) => {

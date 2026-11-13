@@ -10,6 +10,7 @@ export function LunchSection({ settings, update }: SectionProps) {
       <h3 className="mb-1 text-lg font-semibold">{t.lunchTitle}</h3>
       <Row title={t.lunchDuration} hint={t.lunchDurationHint}>
         <Stepper
+          ariaLabel={t.lunchDuration}
           value={settings.lunchMin}
           step={15}
           min={0}

@@ -18,6 +18,10 @@ export const en: Strings = {
     save: "Save",
     prevMonth: "Previous month",
     nextMonth: "Next month",
+    /** Names of the project palette colors, in palette order. */
+    colors: ["Green", "Blue", "Orange", "Purple", "Pink", "Teal", "Yellow", "Coral", "Lime", "Indigo", "Light pink", "Gray"],
+    colorN: (n: number) => `Color ${n}`,
+    time: "Time",
   },
   titlebar: {
     minimize: "Minimize",
