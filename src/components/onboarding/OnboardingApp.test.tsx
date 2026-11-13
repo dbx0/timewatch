@@ -103,6 +103,22 @@ describe("OnboardingApp", () => {
     expect(screen.getByTestId("rounding-example").textContent).toBe("2");
   });
 
+  it("a failed save toasts and shows the stored value again", async () => {
+    await toProjects();
+    addProject("Acme", "Migração SAP");
+    click("Continuar");
+    click("Continuar");
+    vi.mocked(api.setSettings).mockRejectedValueOnce("disco cheio");
+    vi.mocked(api.getSettings).mockResolvedValue({ ...base, lunchMin: 60 });
+    fireEvent.click(screen.getByRole("radio", { name: "30 min" }));
+    expect(screen.getByRole("radio", { name: "30 min" }).getAttribute("aria-checked")).toBe("true");
+    await flush();
+    expect(screen.getByText("Não foi possível salvar. Tente de novo.")).toBeTruthy();
+    expect(api.getSettings).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole("radio", { name: "1h" }).getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByRole("radio", { name: "30 min" }).getAttribute("aria-checked")).toBe("false");
+  });
+
   it("lunch step saves immediately", async () => {
     await toProjects();
     addProject("Acme", "Migração SAP");

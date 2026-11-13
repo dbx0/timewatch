@@ -122,6 +122,12 @@ describe("SettingsApp", () => {
     expect(screen.getByText("Exato").getAttribute("aria-checked")).toBe("true");
   });
 
+  it("a failed load toasts instead of leaving the window silently empty", async () => {
+    vi.mocked(api.getSettings).mockRejectedValue("Erro ao acessar os dados");
+    await mount();
+    expect(useToasts.getState().current?.message).toBe("Erro ao acessar os dados");
+  });
+
   it("monitor dropdown stores the monitor name", async () => {
     vi.mocked(availableMonitors).mockResolvedValue([{ name: "DELL U2720Q" }] as never);
     await mount();
@@ -251,6 +257,20 @@ describe("SettingsApp", () => {
       expect(t?.message).toBe("Projeto apagado");
       t?.undo?.();
       expect(api.undo).toHaveBeenCalled();
+    });
+
+    it("undoing a delete with nothing to undo says so", async () => {
+      vi.mocked(api.projectUsage).mockResolvedValue({ entries: 0, ms: 0 });
+      vi.mocked(api.deleteProject).mockResolvedValue({ project: projects[0], entries: 0, ms: 0 });
+      vi.mocked(api.undo).mockResolvedValue(false);
+      await mount();
+      nav("Projetos");
+      del("Apagar projeto Migração SAP");
+      await flush();
+      fireEvent.click(screen.getByRole("button", { name: "Apagar" }));
+      await flush();
+      await act(async () => useToasts.getState().current?.undo?.());
+      expect(useToasts.getState().current?.message).toBe("Nada para desfazer");
     });
 
     it("shows hours and entry count when the project has entries, and Cancelar keeps it", async () => {

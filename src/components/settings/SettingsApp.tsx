@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useT } from "../../i18n";
 import * as api from "../../lib/api";
+import { errMsg } from "../../lib/dates";
 import type { Project, Settings } from "../../lib/types";
 import { toast } from "../../stores/toast";
 import { ToastHost } from "../ui/Toast";
@@ -27,9 +28,11 @@ export function SettingsApp() {
     current.current = s;
     setSettings(s);
   };
-  const refetch = useCallback(() => api.getSettings().then(apply).catch(() => {}), []);
+  // A failed load would leave the window empty or stale with no hint: say why.
+  const fail = (e: unknown) => toast(errMsg(e));
+  const refetch = useCallback(() => api.getSettings().then(apply).catch(fail), []);
   const reloadProjects = useCallback(
-    () => api.getSnapshot().then((s) => { setProjects(s.projects); setSessionId(s.sessionProject?.id ?? null); }).catch(() => {}),
+    () => api.getSnapshot().then((s) => { setProjects(s.projects); setSessionId(s.sessionProject?.id ?? null); }).catch(fail),
     [],
   );
 

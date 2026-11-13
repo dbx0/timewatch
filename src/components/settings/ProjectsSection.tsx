@@ -125,7 +125,11 @@ export function ProjectsSection({
     try {
       await api.deleteProject(p.id);
       toast(t.projectDeleted, {
-        undo: () => void api.undo().then(reload, fail),
+        undo: () =>
+          void api.undo().then((ok) => {
+            if (!ok) toast(L.toast.nothingToUndo);
+            reload();
+          }, fail),
       });
       reload();
     } catch (e) {

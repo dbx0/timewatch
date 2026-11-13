@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { errMsg } from "../../lib/dates";
 import { LANGS, LANGUAGE_NAMES, useLang, useT, type LanguagePref } from "../../i18n";
 import * as api from "../../lib/api";
 import type { Settings } from "../../lib/types";
@@ -25,20 +26,29 @@ export function OnboardingApp() {
   const [busy, setBusy] = useState(false);
   const current = useRef<Settings | null>(null);
 
-  useEffect(() => {
-    api.getSettings().then((s) => {
-      current.current = s;
-      setSettings(s);
-    }, () => {});
-  }, []);
+  const refetch = useCallback(
+    () =>
+      api.getSettings().then(
+        (s) => {
+          current.current = s;
+          setSettings(s);
+        },
+        (e: unknown) => toast(errMsg(e)),
+      ),
+    [],
+  );
+  useEffect(() => void refetch(), [refetch]);
 
-  /** Steps 3-5 save immediately. */
+  /** Steps 3-5 save immediately; a failed save shows what is really stored again. */
   const update = (patch: Partial<Settings>) => {
     if (!current.current) return;
     const next = { ...current.current, ...patch };
     current.current = next;
     setSettings(next);
-    api.setSettings(next).catch(() => toast(t.saveFailed));
+    api.setSettings(next).catch(() => {
+      toast(t.saveFailed);
+      void refetch();
+    });
   };
 
   const run = (p: Promise<void>) => {
