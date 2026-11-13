@@ -38,6 +38,13 @@ pub struct Lunch {
     pub end: Ms,
 }
 
+/// Default global shortcut. Windows reserves Alt+Space for the window system menu.
+pub const DEFAULT_SHORTCUT: &str = if cfg!(windows) {
+    "Ctrl+Alt+Space"
+} else {
+    "Alt+Space"
+};
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Settings {
@@ -69,7 +76,7 @@ impl Default for Settings {
             idle_min: 15,
             stop_on_sleep: false,
             autostart: true,
-            shortcut: "Alt+Space".to_string(),
+            shortcut: DEFAULT_SHORTCUT.to_string(),
             overlay_monitor: None,
             onboarded: false,
             language: LanguagePref::System,
@@ -103,7 +110,11 @@ mod tests {
         assert_eq!(s.idle_min, 15);
         assert!(!s.stop_on_sleep);
         assert!(s.autostart);
-        assert_eq!(s.shortcut, "Alt+Space");
+        assert_eq!(s.shortcut, DEFAULT_SHORTCUT);
+        #[cfg(windows)]
+        assert_eq!(DEFAULT_SHORTCUT, "Ctrl+Alt+Space");
+        #[cfg(not(windows))]
+        assert_eq!(DEFAULT_SHORTCUT, "Alt+Space");
         assert_eq!(s.overlay_monitor, None);
         assert!(!s.onboarded);
         assert_eq!(s.language, crate::i18n::LanguagePref::System);

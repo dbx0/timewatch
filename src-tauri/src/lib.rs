@@ -139,6 +139,7 @@ pub fn run() {
             commands::get_overlay_config,
             commands::finish_onboarding,
             commands::skip_onboarding,
+            tray::get_shortcut_failure,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

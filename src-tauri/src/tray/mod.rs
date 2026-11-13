@@ -3,10 +3,11 @@
 use std::sync::Mutex;
 
 use chrono::Local;
+use serde::Serialize;
 use tauri::image::Image;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Listener, Manager};
+use tauri::{AppHandle, Emitter, Listener, Manager};
 use tauri_plugin_autostart::ManagerExt as _;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
 
@@ -189,6 +190,45 @@ pub fn apply_shortcut(
     Ok(())
 }
 
+/// Event emitted when the global shortcut cannot be registered (payload: `ShortcutFailure`).
+pub const SHORTCUT_FAILED_EVENT: &str = "shortcut://failed";
+
+/// Why the stored shortcut is not active. `error` is already localized.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShortcutFailure {
+    pub shortcut: String,
+    pub error: String,
+}
+
+/// The current registration failure, kept so windows opened later can still show it.
+static SHORTCUT_FAILURE: Mutex<Option<ShortcutFailure>> = Mutex::new(None);
+
+pub fn shortcut_failure() -> Option<ShortcutFailure> {
+    SHORTCUT_FAILURE
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .clone()
+}
+
+/// Records the outcome of registering `shortcut`; a failure is also emitted as `shortcut://failed`.
+pub fn record_shortcut_result(app: &AppHandle, shortcut: &str, result: &Result<(), String>) {
+    let failure = result.as_ref().err().map(|e| ShortcutFailure {
+        shortcut: shortcut.to_string(),
+        error: e.clone(),
+    });
+    *SHORTCUT_FAILURE.lock().unwrap_or_else(|p| p.into_inner()) = failure.clone();
+    if let Some(f) = failure {
+        let _ = app.emit(SHORTCUT_FAILED_EVENT, f);
+    }
+}
+
+/// The current shortcut registration failure, or `null` when the shortcut is active.
+#[tauri::command]
+pub fn get_shortcut_failure() -> Option<ShortcutFailure> {
+    shortcut_failure()
+}
+
 /// Login items are only touched in release builds, or in debug builds that opt in.
 pub fn autostart_allowed(debug: bool, opt_in: bool) -> bool {
     !debug || opt_in
@@ -220,10 +260,13 @@ pub fn apply_startup(app: &AppHandle) {
     }) else {
         return;
     };
-    match apply_shortcut(app, None, &settings.shortcut, lang) {
+    let registered = apply_shortcut(app, None, &settings.shortcut, lang);
+    match &registered {
         Ok(()) => eprintln!("[tray] global shortcut registered: {}", settings.shortcut),
         Err(e) => eprintln!("[tray] {e}"),
     }
+    // Taken by another app (or the OS): tell the user instead of failing silently.
+    record_shortcut_result(app, &settings.shortcut, &registered);
     match apply_autostart(app, settings.autostart) {
         Ok(()) => eprintln!("[tray] autostart set to {}", settings.autostart),
         Err(e) => eprintln!("[tray] autostart: {e}"),
@@ -256,7 +299,10 @@ mod tests {
     fn tray_icons_black_template_and_white_variant() {
         let black = Image::from_bytes(include_bytes!("../../icons/tray/tray.png")).unwrap();
         let white = Image::from_bytes(include_bytes!("../../icons/tray/tray-white.png")).unwrap();
-        assert_eq!((black.width(), black.height()), (white.width(), white.height()));
+        assert_eq!(
+            (black.width(), black.height()),
+            (white.width(), white.height())
+        );
         let (b, w) = (black.rgba(), white.rgba());
         // Same shape (alpha), opposite color.
         for (bp, wp) in b.chunks(4).zip(w.chunks(4)) {
@@ -267,6 +313,25 @@ mod tests {
             }
         }
         assert!(w.chunks(4).any(|p| p[3] > 0));
+    }
+
+    #[test]
+    fn default_shortcuts_parse() {
+        assert!(parse_shortcut(crate::domain::DEFAULT_SHORTCUT, Lang::En).is_ok());
+        assert!(parse_shortcut("Ctrl+Alt+Space", Lang::En).is_ok());
+        assert!(parse_shortcut("Alt+Space", Lang::En).is_ok());
+    }
+
+    #[test]
+    fn shortcut_failure_serializes_camel_case() {
+        let f = ShortcutFailure {
+            shortcut: "Alt+Space".into(),
+            error: "taken".into(),
+        };
+        assert_eq!(
+            serde_json::to_value(f).unwrap(),
+            serde_json::json!({ "shortcut": "Alt+Space", "error": "taken" })
+        );
     }
 
     #[test]

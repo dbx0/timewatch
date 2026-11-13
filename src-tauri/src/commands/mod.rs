@@ -319,9 +319,18 @@ pub fn set_settings(
     };
     let shortcut_changed = old.shortcut != settings.shortcut;
     let language_changed = old.language != settings.language;
+    let monitor_changed = old.overlay_monitor != settings.overlay_monitor;
     // Registering first means an invalid/taken shortcut leaves both the old one and the stored settings intact.
     if shortcut_changed {
-        tray::apply_shortcut(&app, Some(&old.shortcut), &settings.shortcut, lang)?;
+        let registered = tray::apply_shortcut(&app, Some(&old.shortcut), &settings.shortcut, lang);
+        if registered.is_ok() {
+            tray::record_shortcut_result(&app, &settings.shortcut, &registered);
+        }
+        registered?;
+    } else if tray::shortcut_failure().is_some() {
+        // Unchanged but not active (taken at startup): retry without blocking the save.
+        let registered = tray::apply_shortcut(&app, None, &settings.shortcut, lang);
+        tray::record_shortcut_result(&app, &settings.shortcut, &registered);
     }
     let autostart = settings.autostart;
     let new_shortcut = settings.shortcut.clone();
@@ -333,6 +342,9 @@ pub fn set_settings(
     }
     if language_changed {
         apply_language(&app);
+    }
+    if monitor_changed {
+        window::reposition_overlay(&app);
     }
     if old.autostart != autostart {
         // A login-item failure must not block saving the other settings.
