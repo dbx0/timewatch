@@ -62,10 +62,12 @@ O workflow `.github/workflows/build.yml` roda testes e build em `macos-latest` e
 
 ## Dados e privacidade
 
-Os dados ficam num único arquivo SQLite, `timewatch.sqlite3`, na pasta de dados do app (identificador `dev.timewatch.app`):
+Os dados ficam num único arquivo SQLite, `timewatch.sqlite3`, na pasta de dados do app (identificador `dev.timewatch.desktop`):
 
-- macOS: `~/Library/Application Support/dev.timewatch.app/`
-- Windows: `%APPDATA%\dev.timewatch.app\`
+- macOS: `~/Library/Application Support/dev.timewatch.desktop/`
+- Windows: `%APPDATA%\dev.timewatch.desktop\`
+
+Versões antigas usavam o identificador `dev.timewatch.app`; na primeira execução o banco é copiado de lá automaticamente (a cópia antiga fica como backup).
 
 O app não faz chamadas de rede, não tem telemetria e não exige conta. Para backup, copie o arquivo com o app fechado.
 

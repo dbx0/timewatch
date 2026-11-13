@@ -1,5 +1,6 @@
 pub mod absence;
 pub mod commands;
+pub mod data_dir;
 pub mod domain;
 pub mod export;
 pub mod i18n;
@@ -71,9 +72,22 @@ pub fn run() {
                 None => app.path().app_data_dir()?,
             };
             #[cfg(not(debug_assertions))]
-            let dir = app.path().app_data_dir()?;
+            let dir = {
+                let dir = app.path().app_data_dir()?;
+                // Builds before the identifier change kept their data under `dev.timewatch.app`.
+                if let Some(old) = data_dir::legacy_dir(&dir) {
+                    match data_dir::migrate_legacy_db(&dir, &old) {
+                        Ok(true) => eprintln!("[setup] migrated data from {}", old.display()),
+                        Ok(false) => {}
+                        Err(e) => {
+                            eprintln!("[setup] data migration from {} failed: {e}", old.display())
+                        }
+                    }
+                }
+                dir
+            };
             std::fs::create_dir_all(&dir)?;
-            let db = Db::open(&dir.join("timewatch.sqlite3"))?;
+            let db = Db::open(&dir.join(data_dir::DB_FILE))?;
             let mut tracker = Tracker::new(db);
             tracker.set_system_lang(i18n::system_lang());
             tracker.reconcile_on_startup(&Local, now_ms())?;
