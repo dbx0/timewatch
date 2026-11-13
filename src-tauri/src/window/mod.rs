@@ -23,6 +23,9 @@ pub const STRIP_W: f64 = 160.0;
 pub const STRIP_H: f64 = 6.0;
 
 const HOVER_POLL: Duration = Duration::from_millis(33);
+/// Poll interval while the cursor is far (> `NEAR_MARGIN` px) outside the overlay frame.
+const HOVER_POLL_FAR: Duration = Duration::from_millis(100);
+const NEAR_MARGIN: f64 = 100.0;
 const MONITOR_POLL: Duration = Duration::from_secs(2);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -47,6 +50,17 @@ pub struct OverlayLayout {
     pub pill_w: f64,
     pub pill_h: f64,
     pub notch: Option<NotchInfo>,
+}
+
+impl OverlayLayout {
+    /// Window size in physical pixels of the target monitor (Windows applies it directly, so a
+    /// logical size is never resolved against the scale of the monitor the window is leaving).
+    pub fn phys_size(&self) -> (u32, u32) {
+        (
+            (self.w * self.scale).round() as u32,
+            (self.h * self.scale).round() as u32,
+        )
+    }
 }
 
 /// Payload of `overlay://config`.
@@ -121,18 +135,140 @@ pub fn rel_cursor(cursor: (f64, f64), cursor_scale: f64, l: &OverlayLayout) -> (
     (cursor.0 / cursor_scale - l.x, cursor.1 / cursor_scale - l.y)
 }
 
-/// Index of the monitor named `want`, else the primary, else the first.
+/// What tells monitors apart: the OS name (identical models share it) and the physical origin.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MonitorKey {
+    pub name: Option<String>,
+    pub pos: (i32, i32),
+}
+
+impl MonitorKey {
+    fn name(&self) -> &str {
+        self.name.as_deref().unwrap_or("")
+    }
+}
+
+/// The `overlay_monitor` setting value for each monitor: the plain name when it is unique (the
+/// format earlier versions stored), `name@x,y` (physical origin) when several monitors share the
+/// name or it is empty.
+pub fn monitor_ids(keys: &[MonitorKey]) -> Vec<String> {
+    keys.iter()
+        .map(|k| {
+            let n = k.name();
+            let shared = n.is_empty() || keys.iter().filter(|o| o.name() == n).count() > 1;
+            if shared {
+                format!("{n}@{},{}", k.pos.0, k.pos.1)
+            } else {
+                n.to_string()
+            }
+        })
+        .collect()
+}
+
+/// Human labels: the name, numbered ` (2)`, ` (3)`… when repeated; `#n` when unnamed.
+pub fn monitor_labels(keys: &[MonitorKey]) -> Vec<String> {
+    keys.iter()
+        .enumerate()
+        .map(|(i, k)| {
+            let n = k.name();
+            if n.is_empty() {
+                return format!("#{}", i + 1);
+            }
+            let same: Vec<usize> = (0..keys.len()).filter(|&j| keys[j].name() == n).collect();
+            match same.iter().position(|&j| j == i) {
+                Some(nth) if same.len() > 1 => format!("{n} ({})", nth + 1),
+                _ => n.to_string(),
+            }
+        })
+        .collect()
+}
+
+/// Splits `name@x,y` into its parts; anything else is a plain name.
+fn split_monitor_id(id: &str) -> (&str, Option<(i32, i32)>) {
+    if let Some((name, pos)) = id.rsplit_once('@') {
+        if let Some((x, y)) = pos.split_once(',') {
+            if let (Ok(x), Ok(y)) = (x.parse(), y.parse()) {
+                return (name, Some((x, y)));
+            }
+        }
+    }
+    (id, None)
+}
+
+/// Index of the monitor `want` identifies (see `monitor_ids`), else the primary, else the first.
+/// A stale id still finds its monitor: same name and origin, then the first with the same name.
 pub fn pick_monitor(
-    names: &[Option<String>],
+    keys: &[MonitorKey],
     primary: Option<usize>,
     want: Option<&str>,
 ) -> Option<usize> {
-    if names.is_empty() {
+    if keys.is_empty() {
         return None;
     }
-    want.and_then(|w| names.iter().position(|n| n.as_deref() == Some(w)))
-        .or(primary.filter(|&i| i < names.len()))
-        .or(Some(0))
+    let wanted = want.and_then(|w| {
+        if let Some(i) = monitor_ids(keys).iter().position(|id| id == w) {
+            return Some(i);
+        }
+        let (name, pos) = split_monitor_id(w);
+        pos.and_then(|p| keys.iter().position(|k| k.name() == name && k.pos == p))
+            .or_else(|| {
+                (!name.is_empty())
+                    .then(|| keys.iter().position(|k| k.name() == name))
+                    .flatten()
+            })
+    });
+    wanted.or(primary.filter(|&i| i < keys.len())).or(Some(0))
+}
+
+fn monitor_keys(monitors: &[tauri::Monitor]) -> Vec<MonitorKey> {
+    monitors
+        .iter()
+        .map(|m| MonitorKey {
+            name: m.name().cloned(),
+            pos: (m.position().x, m.position().y),
+        })
+        .collect()
+}
+
+/// One entry of `list_monitors`: `id` is what `overlay_monitor` stores, `label` what to show.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MonitorOption {
+    pub id: String,
+    pub label: String,
+    pub primary: bool,
+}
+
+/// The monitors the overlay can be placed on, for the settings dropdown.
+#[tauri::command]
+pub fn list_monitors(app: AppHandle) -> Vec<MonitorOption> {
+    let monitors = app.available_monitors().unwrap_or_default();
+    let primary = app.primary_monitor().ok().flatten();
+    let keys = monitor_keys(&monitors);
+    monitor_ids(&keys)
+        .into_iter()
+        .zip(monitor_labels(&keys))
+        .zip(&monitors)
+        .map(|((id, label), m)| MonitorOption {
+            id,
+            label,
+            primary: primary
+                .as_ref()
+                .is_some_and(|p| p.position() == m.position()),
+        })
+        .collect()
+}
+
+/// Hover poll interval: fine samples near the overlay (hover and rest detection), coarse when
+/// the cursor is more than `NEAR_MARGIN` logical px outside the window frame.
+pub fn hover_poll_interval(rel: (f64, f64), l: &OverlayLayout) -> Duration {
+    let dx = (-rel.0).max(rel.0 - l.w).max(0.0);
+    let dy = (-rel.1).max(rel.1 - l.h).max(0.0);
+    if dx.max(dy) > NEAR_MARGIN {
+        HOVER_POLL_FAR
+    } else {
+        HOVER_POLL
+    }
 }
 
 /// Runtime overlay state shared by the commands and the polling threads.
@@ -143,6 +279,9 @@ pub struct OverlayState {
     layout: Mutex<Option<(OverlayLayout, f64)>>,
     hovering: AtomicBool,
     expanded: AtomicBool,
+    /// `settings.overlay_monitor` as of the last reposition, so the monitor poll never takes the
+    /// tracker lock. `set_settings` repositions on change, which refreshes it.
+    monitor_pref: Mutex<Option<String>>,
 }
 
 impl OverlayState {
@@ -201,7 +340,8 @@ pub fn create_overlay(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// Places the overlay on `settings.overlay_monitor` (by name) or the primary monitor.
+/// Places the overlay on `settings.overlay_monitor` (see `monitor_ids`) or the primary monitor.
+/// Takes the tracker lock: never call while holding it.
 pub fn reposition_overlay(app: &AppHandle) {
     let Some(win) = app.get_webview_window(OVERLAY_LABEL) else {
         return;
@@ -212,11 +352,14 @@ pub fn reposition_overlay(app: &AppHandle) {
         .try_state::<AppState>()
         .and_then(|s| s.lock().settings().ok())
         .and_then(|s| s.overlay_monitor);
-    let names: Vec<Option<String>> = monitors.iter().map(|m| m.name().cloned()).collect();
+    if let Some(state) = app.try_state::<OverlayState>() {
+        *state.monitor_pref.lock().unwrap_or_else(|p| p.into_inner()) = want.clone();
+    }
+    let keys = monitor_keys(&monitors);
     let primary_idx = primary
         .as_ref()
         .and_then(|p| monitors.iter().position(|m| m.position() == p.position()));
-    let Some(m) = pick_monitor(&names, primary_idx, want.as_deref()).map(|i| &monitors[i]) else {
+    let Some(m) = pick_monitor(&keys, primary_idx, want.as_deref()).map(|i| &monitors[i]) else {
         return;
     };
 
@@ -302,8 +445,10 @@ pub fn focus_overlay(app: &AppHandle) {
 fn start_hover_poll(app: AppHandle) {
     let t0 = Instant::now();
     let mut rest = intent::RestDetector::new();
+    let mut wait = HOVER_POLL;
     std::thread::spawn(move || loop {
-        std::thread::sleep(HOVER_POLL);
+        std::thread::sleep(wait);
+        wait = HOVER_POLL;
         let (Some(state), Some(win)) = (
             app.try_state::<OverlayState>(),
             app.get_webview_window(OVERLAY_LABEL),
@@ -318,8 +463,9 @@ fn start_hover_poll(app: AppHandle) {
             continue;
         };
         let rect = *state.hit_rect.lock().unwrap_or_else(|p| p.into_inner());
-        let inside =
-            rect.is_some_and(|r| r.contains(rel_cursor((c.x, c.y), cursor_scale, &layout)));
+        let rel = rel_cursor((c.x, c.y), cursor_scale, &layout);
+        let inside = rect.is_some_and(|r| r.contains(rel));
+        wait = hover_poll_interval(rel, &layout);
         if state.hovering.swap(inside, Ordering::SeqCst) != inside {
             platform::set_ignore_cursor_events(&win, !inside);
             let _ = app.emit("overlay://hover", inside);
@@ -353,10 +499,13 @@ fn start_monitor_poll(app: AppHandle) {
                     )
                 })
                 .collect();
-            let want = app
-                .try_state::<AppState>()
-                .and_then(|s| s.lock().settings().ok())
-                .and_then(|s| s.overlay_monitor);
+            // Cached by `reposition_overlay`: no tracker lock every 2 s.
+            let want = app.try_state::<OverlayState>().and_then(|s| {
+                s.monitor_pref
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .clone()
+            });
             format!("{monitors:?}{want:?}")
         };
         let mut last = signature(&app);
@@ -436,6 +585,7 @@ pub fn blocks_close(label: &str) -> bool {
     label == OVERLAY_LABEL
 }
 
+#[cfg(target_os = "macos")]
 const NORMAL_WINDOWS: [&str; 3] = ["report", "settings", "onboarding"];
 
 /// macOS: `Regular` (Dock icon, focusable, ⌘-tab) while a normal window is open, else `Accessory`.
@@ -599,13 +749,112 @@ mod tests {
         assert!(!r.contains((139.0, 10.0)));
     }
 
+    fn key(name: Option<&str>, x: i32, y: i32) -> MonitorKey {
+        MonitorKey {
+            name: name.map(str::to_string),
+            pos: (x, y),
+        }
+    }
+
     #[test]
     fn picks_named_monitor_else_primary() {
-        let names = [Some("Built-in".to_string()), Some("LG".to_string()), None];
-        assert_eq!(pick_monitor(&names, Some(0), Some("LG")), Some(1));
-        assert_eq!(pick_monitor(&names, Some(0), Some("Gone")), Some(0));
-        assert_eq!(pick_monitor(&names, Some(2), None), Some(2));
-        assert_eq!(pick_monitor(&names, None, None), Some(0));
+        let keys = [
+            key(Some("Built-in"), 0, 0),
+            key(Some("LG"), 3024, 0),
+            key(None, -1920, 0),
+        ];
+        assert_eq!(pick_monitor(&keys, Some(0), Some("LG")), Some(1));
+        assert_eq!(pick_monitor(&keys, Some(0), Some("Gone")), Some(0));
+        assert_eq!(pick_monitor(&keys, Some(2), None), Some(2));
+        assert_eq!(pick_monitor(&keys, None, None), Some(0));
         assert_eq!(pick_monitor(&[], None, None), None);
+    }
+
+    #[test]
+    fn monitor_ids_plain_when_unique_positional_when_shared() {
+        let keys = [
+            key(Some("Built-in"), 0, 0),
+            key(Some("DELL U2720Q"), 3024, 0),
+            key(Some("DELL U2720Q"), 6864, -200),
+            key(None, -1920, 0),
+        ];
+        assert_eq!(
+            monitor_ids(&keys),
+            [
+                "Built-in",
+                "DELL U2720Q@3024,0",
+                "DELL U2720Q@6864,-200",
+                "@-1920,0"
+            ]
+        );
+        assert_eq!(
+            monitor_labels(&keys),
+            ["Built-in", "DELL U2720Q (1)", "DELL U2720Q (2)", "#4"]
+        );
+    }
+
+    #[test]
+    fn identical_monitors_are_told_apart() {
+        let keys = [
+            key(Some("Built-in"), 0, 0),
+            key(Some("DELL"), 3024, 0),
+            key(Some("DELL"), 6864, 0),
+            key(None, -1920, 0),
+        ];
+        let ids = monitor_ids(&keys);
+        for (i, id) in ids.iter().enumerate() {
+            assert_eq!(pick_monitor(&keys, Some(0), Some(id)), Some(i), "{id}");
+        }
+        // Legacy plain name stored before duplicates existed: the first with that name.
+        assert_eq!(pick_monitor(&keys, Some(0), Some("DELL")), Some(1));
+        // Arrangement changed: origin no longer matches, the name still does.
+        assert_eq!(pick_monitor(&keys, Some(0), Some("DELL@100,100")), Some(1));
+        // Twin unplugged: the positional id still finds the remaining one by origin.
+        let one = [key(Some("Built-in"), 0, 0), key(Some("DELL"), 6864, 0)];
+        assert_eq!(pick_monitor(&one, Some(0), Some("DELL@6864,0")), Some(1));
+        // Unnamed monitor only by origin; gone → primary.
+        assert_eq!(pick_monitor(&keys, Some(0), Some("@-1920,0")), Some(3));
+        assert_eq!(pick_monitor(&keys, Some(0), Some("@5,5")), Some(0));
+        // A name that merely contains '@' is still a plain name.
+        let at = [key(Some("Cinema@Home"), 0, 0), key(Some("x"), 10, 0)];
+        assert_eq!(pick_monitor(&at, Some(1), Some("Cinema@Home")), Some(0));
+    }
+
+    #[test]
+    fn monitor_option_serializes_camel_case() {
+        let v = serde_json::to_value(MonitorOption {
+            id: "DELL@0,0".into(),
+            label: "DELL (1)".into(),
+            primary: true,
+        })
+        .unwrap();
+        assert_eq!(
+            v,
+            serde_json::json!({ "id": "DELL@0,0", "label": "DELL (1)", "primary": true })
+        );
+    }
+
+    #[test]
+    fn physical_size_uses_target_monitor_scale() {
+        let l = overlay_frame((0.0, 0.0), (3840.0, 2160.0), 1.5, None);
+        assert_eq!(l.phys_size(), (780, 960));
+        let l = overlay_frame((3840.0, 0.0), (1920.0, 1080.0), 1.0, None);
+        assert_eq!(l.phys_size(), (520, 640));
+        let l = overlay_frame((0.0, 0.0), (2560.0, 1440.0), 1.25, None);
+        assert_eq!(l.phys_size(), (650, 800));
+    }
+
+    #[test]
+    fn hover_poll_backs_off_far_from_the_frame() {
+        let l = overlay_frame((0.0, 0.0), (1920.0, 1080.0), 1.0, None);
+        // Inside the window and within the margin: fine samples.
+        assert_eq!(hover_poll_interval((260.0, 10.0), &l), HOVER_POLL);
+        assert_eq!(hover_poll_interval((-100.0, 10.0), &l), HOVER_POLL);
+        assert_eq!(hover_poll_interval((620.0, 740.0), &l), HOVER_POLL);
+        // More than 100 px outside on any axis: coarse.
+        assert_eq!(hover_poll_interval((-101.0, 10.0), &l), HOVER_POLL_FAR);
+        assert_eq!(hover_poll_interval((260.0, 741.0), &l), HOVER_POLL_FAR);
+        assert_eq!(hover_poll_interval((900.0, 900.0), &l), HOVER_POLL_FAR);
+        assert!(HOVER_POLL_FAR >= Duration::from_millis(100));
     }
 }

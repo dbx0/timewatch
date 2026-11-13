@@ -129,26 +129,31 @@ pub fn cursor_scale(primary_scale: f64, monitor_scale: f64) -> f64 {
     }
 }
 
-/// Moves and sizes the overlay. macOS uses global points; elsewhere physical pixels.
+/// Moves and sizes the overlay. macOS uses global points; elsewhere physical pixels, with the
+/// size computed from the target monitor's scale. Setting a logical size first would resolve it
+/// against the monitor the window is leaving (mixed-DPI drift), so the position goes first.
 pub fn position_overlay(window: &WebviewWindow, l: &OverlayLayout) {
-    let size = tauri::LogicalSize::new(l.w, l.h);
     #[cfg(target_os = "macos")]
     {
-        let _ = window.set_size(size);
+        let _ = window.set_size(tauri::LogicalSize::new(l.w, l.h));
         let _ = window.set_position(tauri::LogicalPosition::new(l.x, l.y));
     }
+    #[cfg(not(target_os = "macos"))]
+    let (pos, size) = {
+        let (w, h) = l.phys_size();
+        (
+            tauri::PhysicalPosition::new(l.phys_x, l.phys_y),
+            tauri::PhysicalSize::new(w, h),
+        )
+    };
     #[cfg(target_os = "windows")]
     {
-        windows::set_frame(
-            window,
-            size,
-            tauri::PhysicalPosition::new(l.phys_x, l.phys_y),
-        );
+        windows::set_frame(window, pos, size);
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
+        let _ = window.set_position(pos);
         let _ = window.set_size(size);
-        let _ = window.set_position(tauri::PhysicalPosition::new(l.phys_x, l.phys_y));
     }
 }
 

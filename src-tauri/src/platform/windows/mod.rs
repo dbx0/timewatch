@@ -1,10 +1,13 @@
+use std::sync::atomic::{AtomicUsize, Ordering};
+
 use tauri::{AppHandle, Manager, WebviewWindow};
 use windows::Win32::Foundation::HWND;
 use windows::Win32::System::SystemInformation::GetTickCount;
 use windows::Win32::System::WindowsProgramming::QueryUnbiasedInterruptTime;
 use windows::Win32::UI::Input::KeyboardAndMouse::{GetLastInputInfo, LASTINPUTINFO};
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetWindowLongPtrW, SetForegroundWindow, SetWindowLongPtrW, GWL_EXSTYLE, WS_EX_TOOLWINDOW,
+    GetForegroundWindow, GetWindowLongPtrW, IsWindow, SetForegroundWindow, SetWindowLongPtrW,
+    SetWindowPos, GWL_EXSTYLE, SWP_NOACTIVATE, SWP_NOOWNERZORDER, SWP_NOZORDER, WS_EX_TOOLWINDOW,
 };
 
 use crate::window::OVERLAY_LABEL;
@@ -69,7 +72,7 @@ fn with_toolwindow(
 /// `always_on_top(true)`; only WS_EX_TOOLWINDOW (hidden from Alt+Tab) is ours.
 pub fn make_overlay(window: &WebviewWindow) -> Result<(), String> {
     if hwnd(window).is_none() {
-        return Err("overlay sem HWND".into());
+        return Err("overlay window has no HWND".into());
     }
     with_toolwindow(window, |_| {}, |_| {});
     Ok(())
@@ -79,24 +82,42 @@ pub fn show_overlay(window: &WebviewWindow) {
     with_toolwindow(window, |w| drop(w.show()), |_| {});
 }
 
+/// Mixed DPI: moving the window onto a monitor with another scale makes Windows send
+/// WM_DPICHANGED, and tao rescales the window from the old scale. So move first (through tao, so
+/// the DPI change is handled while the move runs), then, on the main thread after it, apply the
+/// final position and the physical size computed for the target monitor in one `SetWindowPos`.
+/// The window then already has the target DPI, so that call triggers no further rescale.
 pub fn set_frame(
     window: &WebviewWindow,
-    size: tauri::LogicalSize<f64>,
     pos: tauri::PhysicalPosition<i32>,
+    size: tauri::PhysicalSize<u32>,
 ) {
     with_toolwindow(
         window,
-        |w| {
-            let _ = w.set_size(size);
-            let _ = w.set_position(pos);
+        |w| drop(w.set_position(pos)),
+        move |h| {
+            // SAFETY: valid HWND of our own window, on its thread.
+            let _ = unsafe {
+                SetWindowPos(
+                    h,
+                    None,
+                    pos.x,
+                    pos.y,
+                    size.width as i32,
+                    size.height as i32,
+                    SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOOWNERZORDER,
+                )
+            };
         },
-        |_| {},
     );
 }
 
 pub fn set_ignore_cursor_events(window: &WebviewWindow, ignore: bool) {
     with_toolwindow(window, |w| drop(w.set_ignore_cursor_events(ignore)), |_| {});
 }
+
+/// Window that had the keyboard before the overlay took it (raw HWND, 0 = none).
+static PREV_FOREGROUND: AtomicUsize = AtomicUsize::new(0);
 
 /// Focusability goes through Tauri so tao's own flags (and later rebuilds) agree.
 pub fn focus_overlay(app: &AppHandle) {
@@ -107,15 +128,39 @@ pub fn focus_overlay(app: &AppHandle) {
         &win,
         |w| drop(w.set_focusable(true)),
         |h| {
-            // SAFETY: valid HWND of our own window.
-            let _ = unsafe { SetForegroundWindow(h) };
+            // SAFETY: plain Win32 calls with our own valid HWND.
+            unsafe {
+                let prev = GetForegroundWindow();
+                if !prev.is_invalid() && prev != h {
+                    PREV_FOREGROUND.store(prev.0 as usize, Ordering::SeqCst);
+                }
+                let _ = SetForegroundWindow(h);
+            }
         },
     );
 }
 
+/// Gives the keyboard back to the window that had it before `focus_overlay`, but only when the
+/// overlay still holds it (the user may have clicked elsewhere meanwhile).
 pub fn unfocus_overlay(app: &AppHandle) {
     let Some(win) = app.get_webview_window(OVERLAY_LABEL) else {
         return;
     };
-    with_toolwindow(&win, |w| drop(w.set_focusable(false)), |_| {});
+    with_toolwindow(
+        &win,
+        |w| drop(w.set_focusable(false)),
+        |h| {
+            let prev = PREV_FOREGROUND.swap(0, Ordering::SeqCst);
+            if prev == 0 {
+                return;
+            }
+            let prev = HWND(prev as _);
+            // SAFETY: plain Win32 calls; `IsWindow` guards against a since-destroyed window.
+            unsafe {
+                if GetForegroundWindow() == h && IsWindow(Some(prev)).as_bool() {
+                    let _ = SetForegroundWindow(prev);
+                }
+            }
+        },
+    );
 }

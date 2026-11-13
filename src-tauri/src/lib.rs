@@ -140,6 +140,7 @@ pub fn run() {
             commands::finish_onboarding,
             commands::skip_onboarding,
             tray::get_shortcut_failure,
+            window::list_monitors,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
