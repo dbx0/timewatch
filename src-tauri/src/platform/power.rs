@@ -1,8 +1,9 @@
 //! System sleep and screen lock (spec 6.3 and 8).
 //!
 //! macOS: `NSWorkspaceWillSleepNotification` records the true sleep moment (and writes a tracker
-//! heartbeat, so a crash during sleep is reconciled at the sleep time), and the distributed
-//! `com.apple.screenIsLocked` / `com.apple.screenIsUnlocked` notifications mark a lock.
+//! heartbeat, so a crash during sleep is reconciled at the sleep time). The screen lock is polled
+//! on every absence tick (`sync_lock`): the distributed `com.apple.screenIsLocked` notifications
+//! are held back while an inactive accessory app (Timewatch, nearly always) is in the background.
 //! The absence monitor (`absence.rs`) stays the single producer of absences; it reads this state:
 //! - `refine_sleep_at`: the sleep moment, instead of the last 5 s tick before the wall-clock gap;
 //! - `lock_adjusted`: while locked, idle counts from the lock moment (typing the password does not
@@ -69,8 +70,18 @@ pub fn adjust_for_lock(
     }
 }
 
-/// `adjust_for_lock` with the current lock state.
+/// Records the lock state seen now: the first tick that sees the lock marks its moment.
+pub fn sync_lock(locked: bool, now: Ms) {
+    if locked {
+        note_screen_locked(now);
+    } else {
+        note_screen_unlocked();
+    }
+}
+
+/// `adjust_for_lock` with the current lock state (polled from the OS first).
 pub fn lock_adjusted(idle_ms: i64, threshold_ms: i64, now: Ms) -> (i64, i64) {
+    sync_lock(crate::platform::screen_locked(), now);
     adjust_for_lock(idle_ms, threshold_ms, now, load(&LOCKED_AT))
 }
 
@@ -88,10 +99,7 @@ mod macos {
 
     use block2::RcBlock;
     use objc2_app_kit::{NSWorkspace, NSWorkspaceWillSleepNotification};
-    use objc2_foundation::{
-        NSDistributedNotificationCenter, NSNotification, NSNotificationCenter, NSOperationQueue,
-        NSString,
-    };
+    use objc2_foundation::{NSNotification, NSNotificationCenter, NSOperationQueue, NSString};
     use tauri::{AppHandle, Manager};
 
     use crate::commands::{now_ms, AppState};
@@ -125,24 +133,6 @@ mod macos {
             }
             eprintln!("[power] will sleep");
         });
-
-        let distributed = NSDistributedNotificationCenter::defaultCenter();
-        observe_on(
-            &distributed,
-            &NSString::from_str("com.apple.screenIsLocked"),
-            || {
-                super::note_screen_locked(now_ms());
-                eprintln!("[power] screen locked");
-            },
-        );
-        observe_on(
-            &distributed,
-            &NSString::from_str("com.apple.screenIsUnlocked"),
-            || {
-                super::note_screen_unlocked();
-                eprintln!("[power] screen unlocked");
-            },
-        );
     }
 }
 
@@ -163,6 +153,15 @@ mod tests {
         assert_eq!(pick_sleep_at(T0, T0 + 3_600_000, Some(T0 - 1)), T0);
         assert_eq!(pick_sleep_at(T0, T0 + 3_600_000, Some(T0 + 3_600_001)), T0);
         assert_eq!(pick_sleep_at(T0, T0 + 3_600_000, None), T0);
+    }
+
+    #[test]
+    fn sync_lock_keeps_the_first_locked_tick_and_clears_on_unlock() {
+        sync_lock(true, T0);
+        sync_lock(true, T0 + 5_000);
+        assert_eq!(load(&LOCKED_AT), Some(T0));
+        sync_lock(false, T0 + 10_000);
+        assert_eq!(load(&LOCKED_AT), None);
     }
 
     #[test]

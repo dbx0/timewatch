@@ -973,7 +973,18 @@ impl Tracker {
         self.run(true, |db, log| {
             project(db, pid)?;
             validate_range(db, None, start, end, now)?;
-            insert_entry(db, log, pid, start, Some(end))
+            let e = insert_entry(db, log, pid, start, Some(end))?;
+            // Counts toward the session like any other closed block (an empty "before").
+            adjust_session(
+                db,
+                log,
+                &Entry {
+                    end: None,
+                    ..e.clone()
+                },
+                Some(&e),
+            )?;
+            Ok(e)
         })
     }
 

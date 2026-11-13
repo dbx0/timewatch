@@ -1372,3 +1372,16 @@ fn valid_user_settings_are_kept() {
     tr.set_user_settings(st.clone()).unwrap();
     assert_eq!(tr.settings().unwrap(), st);
 }
+
+#[test]
+fn added_session_block_counts_and_deleting_it_returns_to_the_start() {
+    let (mut tr, a, _) = setup();
+    tr.switch_to(a.id, t(10, 0)).unwrap();
+    tr.pause(t(11, 0)).unwrap();
+    let added = tr.add_entry(a.id, t(11, 10), t(11, 40), t(12, 0)).unwrap();
+    assert_eq!(snap(&tr, t(12, 0)).session_ms, 90 * MIN);
+    tr.delete_entry(added.id).unwrap();
+    assert_eq!(snap(&tr, t(12, 0)).session_ms, 60 * MIN);
+    tr.undo(t(12, 0)).unwrap();
+    assert_eq!(snap(&tr, t(12, 0)).session_ms, 90 * MIN);
+}

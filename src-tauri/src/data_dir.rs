@@ -7,9 +7,6 @@ use std::path::{Path, PathBuf};
 pub const DB_FILE: &str = "timewatch.sqlite3";
 /// Data directory name used by builds before the identifier change.
 pub const LEGACY_IDENTIFIER: &str = "dev.timewatch.app";
-/// SQLite side files that must travel with the database (WAL mode).
-const SIDE_SUFFIXES: [&str; 2] = ["-wal", "-shm"];
-
 /// The pre-rename data dir: a sibling of the current `app_data_dir`.
 pub fn legacy_dir(new_dir: &Path) -> Option<PathBuf> {
     new_dir.parent().map(|p| p.join(LEGACY_IDENTIFIER))
@@ -21,10 +18,11 @@ fn with_suffix(path: &Path, suffix: &str) -> PathBuf {
     PathBuf::from(s)
 }
 
-/// Copies the legacy database (plus `-wal`/`-shm`) into `new_dir` when `new_dir` has none yet.
-/// The old files are left in place as a backup. The main file is written under a temporary name
-/// and renamed last, so an interrupted copy is retried on the next launch instead of leaving a
-/// database without its WAL. Returns whether a migration happened.
+/// Copies the legacy database into `new_dir` when `new_dir` has none yet. The copy is an SQLite
+/// snapshot (`VACUUM INTO`), consistent even if an old build still has the database open, and
+/// already includes whatever sat in its WAL. It is written under a temporary name and renamed
+/// last, so an interrupted copy is retried on the next launch. The old files stay as a backup.
+/// Returns whether a migration happened.
 pub fn migrate_legacy_db(new_dir: &Path, old_dir: &Path) -> io::Result<bool> {
     let new_db = new_dir.join(DB_FILE);
     let old_db = old_dir.join(DB_FILE);
@@ -32,20 +30,23 @@ pub fn migrate_legacy_db(new_dir: &Path, old_dir: &Path) -> io::Result<bool> {
         return Ok(false);
     }
     std::fs::create_dir_all(new_dir)?;
-    for suffix in SIDE_SUFFIXES {
-        let src = with_suffix(&old_db, suffix);
-        let dst = with_suffix(&new_db, suffix);
-        if src.is_file() {
-            std::fs::copy(&src, &dst)?;
-        } else if dst.exists() {
-            // A stale side file from a failed earlier attempt must not pair with the copied db.
-            std::fs::remove_file(&dst)?;
-        }
-    }
     let tmp = with_suffix(&new_db, ".migrating");
-    std::fs::copy(&old_db, &tmp)?;
+    if tmp.exists() {
+        std::fs::remove_file(&tmp)?;
+    }
+    snapshot(&old_db, &tmp).map_err(io::Error::other)?;
     std::fs::rename(&tmp, &new_db)?;
     Ok(true)
+}
+
+fn snapshot(src: &Path, dst: &Path) -> rusqlite::Result<()> {
+    let conn = rusqlite::Connection::open_with_flags(
+        src,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )?;
+    conn.busy_timeout(std::time::Duration::from_secs(5))?;
+    conn.execute("VACUUM INTO ?1", [dst.to_string_lossy()])?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -75,28 +76,39 @@ mod tests {
         );
     }
 
+    /// A real WAL-mode database with one committed row still in its WAL.
+    fn make_db(path: &Path, value: &str) -> rusqlite::Connection {
+        let c = rusqlite::Connection::open(path).unwrap();
+        c.pragma_update(None, "journal_mode", "WAL").unwrap();
+        c.pragma_update(None, "wal_autocheckpoint", 0).unwrap();
+        c.execute_batch("CREATE TABLE t (v TEXT); PRAGMA user_version = 3;")
+            .unwrap();
+        c.execute("INSERT INTO t VALUES (?1)", [value]).unwrap();
+        c
+    }
+
+    fn read(path: &Path) -> (String, i64) {
+        let c = rusqlite::Connection::open(path).unwrap();
+        let v = c.query_row("SELECT v FROM t", [], |r| r.get(0)).unwrap();
+        let ver = c
+            .query_row("PRAGMA user_version", [], |r| r.get(0))
+            .unwrap();
+        (v, ver)
+    }
+
     #[test]
-    fn copies_db_and_side_files_when_new_dir_is_empty() {
+    fn snapshots_db_including_wal_while_the_old_app_has_it_open() {
         let root = tempdir("copy");
         let (old, new) = (
             root.join("dev.timewatch.app"),
             root.join("dev.timewatch.desktop"),
         );
         std::fs::create_dir_all(&old).unwrap();
-        std::fs::write(old.join(DB_FILE), b"db").unwrap();
-        std::fs::write(old.join("timewatch.sqlite3-wal"), b"wal").unwrap();
-        std::fs::write(old.join("timewatch.sqlite3-shm"), b"shm").unwrap();
+        let _held_open = make_db(&old.join(DB_FILE), "hours");
+        assert!(old.join("timewatch.sqlite3-wal").exists());
 
         assert!(migrate_legacy_db(&new, &old).unwrap());
-        assert_eq!(std::fs::read(new.join(DB_FILE)).unwrap(), b"db");
-        assert_eq!(
-            std::fs::read(new.join("timewatch.sqlite3-wal")).unwrap(),
-            b"wal"
-        );
-        assert_eq!(
-            std::fs::read(new.join("timewatch.sqlite3-shm")).unwrap(),
-            b"shm"
-        );
+        assert_eq!(read(&new.join(DB_FILE)), ("hours".to_string(), 3));
         assert!(!new.join("timewatch.sqlite3.migrating").exists());
         // Old data kept as a backup.
         assert!(old.join(DB_FILE).exists());
@@ -106,18 +118,16 @@ mod tests {
     }
 
     #[test]
-    fn copies_db_without_side_files() {
-        let root = tempdir("nowal");
+    fn leftover_temp_file_is_replaced() {
+        let root = tempdir("retry");
         let (old, new) = (root.join("old"), root.join("new"));
         std::fs::create_dir_all(&old).unwrap();
         std::fs::create_dir_all(&new).unwrap();
-        std::fs::write(old.join(DB_FILE), b"db").unwrap();
-        // Leftover from an interrupted attempt.
-        std::fs::write(new.join("timewatch.sqlite3-wal"), b"stale").unwrap();
+        drop(make_db(&old.join(DB_FILE), "x"));
+        std::fs::write(new.join("timewatch.sqlite3.migrating"), b"torn").unwrap();
 
         assert!(migrate_legacy_db(&new, &old).unwrap());
-        assert_eq!(std::fs::read(new.join(DB_FILE)).unwrap(), b"db");
-        assert!(!new.join("timewatch.sqlite3-wal").exists());
+        assert_eq!(read(&new.join(DB_FILE)).0, "x");
         let _ = std::fs::remove_dir_all(&root);
     }
 

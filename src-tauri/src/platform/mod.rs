@@ -30,6 +30,14 @@ pub fn register<R: Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R> {
 }
 
 /// Seconds since the last keyboard or mouse input (0.0 where unsupported).
+/// Whether the screen is locked now (macOS); `false` where not detected (Windows: idle covers it).
+pub fn screen_locked() -> bool {
+    #[cfg(target_os = "macos")]
+    return macos::screen_locked();
+    #[cfg(not(target_os = "macos"))]
+    false
+}
+
 pub fn idle_seconds() -> f64 {
     #[cfg(target_os = "macos")]
     {

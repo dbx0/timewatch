@@ -1,3 +1,4 @@
+use std::ffi::{c_char, c_void};
 use std::sync::mpsc;
 
 use objc2::{sel, MainThreadMarker};
@@ -31,6 +32,44 @@ use panel::OverlayPanel;
 #[link(name = "ApplicationServices", kind = "framework")]
 extern "C" {
     fn CGEventSourceSecondsSinceLastEventType(state: i32, event_type: u32) -> f64;
+}
+
+#[link(name = "CoreFoundation", kind = "framework")]
+extern "C" {
+    fn CGSessionCopyCurrentDictionary() -> *const c_void;
+    fn CFStringCreateWithCString(alloc: *const c_void, s: *const c_char, enc: u32)
+        -> *const c_void;
+    fn CFDictionaryGetValue(dict: *const c_void, key: *const c_void) -> *const c_void;
+    fn CFGetTypeID(cf: *const c_void) -> usize;
+    fn CFBooleanGetTypeID() -> usize;
+    fn CFBooleanGetValue(b: *const c_void) -> u8;
+    fn CFRelease(cf: *const c_void);
+}
+
+/// Whether the login session's screen is locked right now (`CGSSessionScreenIsLocked`; the key
+/// is absent while unlocked). Polled, because the distributed lock notifications are held back
+/// while an accessory app is inactive, which Timewatch nearly always is.
+pub fn screen_locked() -> bool {
+    const UTF8: u32 = 0x0800_0100;
+    // SAFETY: plain CoreFoundation calls; every object created/copied here is released, and the
+    // dictionary value is only read (Get rule, not owned).
+    unsafe {
+        let dict = CGSessionCopyCurrentDictionary();
+        if dict.is_null() {
+            return false;
+        }
+        let key =
+            CFStringCreateWithCString(std::ptr::null(), c"CGSSessionScreenIsLocked".as_ptr(), UTF8);
+        let locked = !key.is_null() && {
+            let v = CFDictionaryGetValue(dict, key);
+            !v.is_null() && CFGetTypeID(v) == CFBooleanGetTypeID() && CFBooleanGetValue(v) != 0
+        };
+        if !key.is_null() {
+            CFRelease(key);
+        }
+        CFRelease(dict);
+        locked
+    }
 }
 
 /// `kCGEventSourceStateCombinedSessionState` (0) and `kCGAnyInputEventType` (!0).
