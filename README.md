@@ -1,6 +1,6 @@
 # Timewatch
 
-Controle de horas para macOS e Windows. Um relógio fica sempre à mão (no notch do Mac, numa faixa no topo da tela no Windows): você troca de projeto com um clique ou com o atalho global, e o app calcula jornada, almoço, horas extras e relatórios semanais. Tudo roda localmente, sem conta e sem rede.
+Controle de horas para macOS, Windows e Linux. Um relógio fica sempre à mão (no notch do Mac, numa faixa no topo da tela no Windows e no Linux): você troca de projeto com um clique ou com o atalho global, e o app calcula jornada, almoço, horas extras e relatórios semanais. Tudo roda localmente, sem conta e sem rede.
 
 ## Telas
 
@@ -26,6 +26,8 @@ xattr -dr com.apple.quarantine /Applications/Timewatch.app
 Requer macOS 12.0 ou superior.
 
 Windows: execute o instalador. Se o SmartScreen avisar, clique em "Mais informações" e depois em "Executar assim mesmo".
+
+Linux (experimental): use o `.AppImage` (`chmod +x` e execute), o `.deb` ou o `.rpm`. Requer WebKitGTK 4.1 e, para o ícone na bandeja, um painel com suporte a AppIndicator. Ainda não há detecção de inatividade no Linux, então a pergunta de ausência só aparece após suspensão.
 
 ## Desenvolvimento
 
@@ -58,7 +60,7 @@ rustup target add x86_64-apple-darwin aarch64-apple-darwin
 pnpm tauri build --target universal-apple-darwin
 ```
 
-O workflow `.github/workflows/build.yml` roda testes e build em `macos-latest` e `windows-latest` a cada push e PR. Uma tag `v*` cria um release em rascunho com os instaladores.
+O workflow `.github/workflows/build.yml` roda testes e build em `macos-latest`, `windows-latest` e `ubuntu-22.04` a cada push e PR. Uma tag `v*` cria um release em rascunho com os instaladores.
 
 ## Dados e privacidade
 
@@ -66,6 +68,7 @@ Os dados ficam num único arquivo SQLite, `timewatch.sqlite3`, na pasta de dados
 
 - macOS: `~/Library/Application Support/dev.timewatch.desktop/`
 - Windows: `%APPDATA%\dev.timewatch.desktop\`
+- Linux: `~/.local/share/dev.timewatch.desktop/`
 
 Versões antigas usavam o identificador `dev.timewatch.app`; na primeira execução o banco é copiado de lá automaticamente (a cópia antiga fica como backup).
 
@@ -74,3 +77,7 @@ O app não faz chamadas de rede, não tem telemetria e não exige conta. Para ba
 ## Limitações conhecidas
 
 Veja a lista completa em [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#limitações-conhecidas).
+
+## Licença
+
+[MIT](LICENSE)
