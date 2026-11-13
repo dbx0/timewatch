@@ -222,6 +222,8 @@ export const en: Strings = {
     backToWeek: "‹ Week",
     addEntry: "+ Add record",
     noProject: "Create a project before adding records",
+    noRoomForEntry: "No free time left on this day for a new entry",
+    futureDay: "Entries can't be added to future days",
     now: "now",
     continuesFromPrev: "continues from the previous day",
     continuesNext: "continues into the next day",

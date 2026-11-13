@@ -223,6 +223,8 @@ export const es: Strings = {
     backToWeek: "‹ Semana",
     addEntry: "+ Agregar registro",
     noProject: "Crea un proyecto antes de agregar registros",
+    noRoomForEntry: "No queda tiempo libre en este día para un registro nuevo",
+    futureDay: "No se pueden agregar registros en días futuros",
     now: "ahora",
     continuesFromPrev: "continúa del día anterior",
     continuesNext: "continúa al día siguiente",

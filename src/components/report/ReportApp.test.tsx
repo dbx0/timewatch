@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 
 vi.mock("../../lib/api", () => ({
@@ -256,6 +256,53 @@ describe("DayView", () => {
     fireEvent.click(screen.getByText("+ Adicionar registro"));
     await flush();
     expect(api.addEntry).toHaveBeenCalledWith(2, atLocal("2026-11-11", "12:00"), atLocal("2026-11-11", "13:00"));
+  });
+
+  it("undo with nothing to undo says so", async () => {
+    vi.mocked(api.undo).mockResolvedValue(false);
+    await openDay({ segments: [seg(7, "09:00", "12:00")] });
+    fireEvent.click(screen.getByRole("button", { name: "Apagar registro" }));
+    await flush();
+    await act(async () => fireEvent.click(within(screen.getByRole("status")).getByText("Desfazer")));
+    expect(screen.getByText("Nada para desfazer")).toBeTruthy();
+  });
+
+  describe("adding today", () => {
+    // Wednesday 2026-11-11 is today, 15:00.
+    beforeEach(() => vi.useFakeTimers({ shouldAdvanceTime: true, now: new Date(2026, 10, 11, 15, 0) }));
+    afterEach(() => vi.useRealTimers());
+
+    it("never ends after now", async () => {
+      await openDay({ segments: [seg(7, "09:00", "14:30")] });
+      fireEvent.click(screen.getByText("+ Adicionar registro"));
+      await flush();
+      expect(api.addEntry).toHaveBeenCalledWith(2, atLocal("2026-11-11", "14:30"), atLocal("2026-11-11", "15:00"));
+    });
+
+    it("with the clock running, fills an earlier free gap", async () => {
+      await openDay({ segments: [seg(6, "09:00", "12:00"), seg(7, "13:00", "15:00", true)] });
+      fireEvent.click(screen.getByText("+ Adicionar registro"));
+      await flush();
+      expect(api.addEntry).toHaveBeenCalledWith(2, atLocal("2026-11-11", "12:00"), atLocal("2026-11-11", "13:00"));
+    });
+
+    it("with no free minute, toasts instead of calling the backend", async () => {
+      await openDay({ segments: [seg(7, "00:00", "15:00", true)] });
+      fireEvent.click(screen.getByText("+ Adicionar registro"));
+      await flush();
+      expect(api.addEntry).not.toHaveBeenCalled();
+      expect(screen.getByText("Não há horário livre neste dia para um novo registro")).toBeTruthy();
+    });
+
+    it("is disabled on future days", async () => {
+      await openDay();
+      expect((screen.getByText("+ Adicionar registro") as HTMLButtonElement).disabled).toBe(false);
+      fireEvent.click(screen.getByRole("button", { name: "Próximo dia" }));
+      await flush();
+      const btn = screen.getByText("+ Adicionar registro") as HTMLButtonElement;
+      expect(btn.disabled).toBe(true);
+      expect(btn.title).toBe("Não dá pra adicionar registros em dias futuros");
+    });
   });
 
   it("unmarks a marked lunch", async () => {

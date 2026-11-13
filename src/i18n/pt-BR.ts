@@ -221,6 +221,8 @@ export const ptBR = {
     backToWeek: "‹ Semana",
     addEntry: "+ Adicionar registro",
     noProject: "Crie um projeto antes de adicionar registros",
+    noRoomForEntry: "Não há horário livre neste dia para um novo registro",
+    futureDay: "Não dá pra adicionar registros em dias futuros",
     now: "agora",
     continuesFromPrev: "continua do dia anterior",
     continuesNext: "continua no dia seguinte",

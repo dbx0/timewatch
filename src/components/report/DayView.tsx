@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as api from "../../lib/api";
-import { addDays, atLocal, errMsg, parseIso, weekdayIndex } from "../../lib/dates";
+import { addDays, errMsg, parseIso, weekdayIndex } from "../../lib/dates";
 import { dayLabel, dec, dur, hm, roundMs } from "../../lib/format";
 import { useT } from "../../i18n";
 import type { DayDto, IsoDate, Settings } from "../../lib/types";
@@ -8,6 +8,7 @@ import { toast } from "../../stores/toast";
 import { Button } from "../ui/Button";
 import { Card, Cards, NavButton } from "./Cards";
 import { DeleteButton, EntryRow } from "./EntryRow";
+import { entrySlot } from "./entrySlot";
 import { Timeline } from "./Timeline";
 
 interface Props {
@@ -19,10 +20,9 @@ interface Props {
   onBack: () => void;
 }
 
-const HOUR = 3_600_000;
-
 export function DayView({ day, today, now, reloadKey, onDayChange, onBack }: Props) {
-  const t = useT().report;
+  const L = useT();
+  const t = L.report;
   const [data, setData] = useState<DayDto | null>(null);
   const [settings, setSettings] = useState<Pick<Settings, "lunchMin" | "lunchRef" | "roundingMin"> | null>(null);
   const seq = useRef(0);
@@ -51,10 +51,22 @@ export function DayView({ day, today, now, reloadKey, onDayChange, onBack }: Pro
     load();
   };
 
-  const undo = () => void run(() => api.undo());
+  const undo = () =>
+    void run(async () => {
+      if (!(await api.undo())) toast(L.toast.nothingToUndo);
+    });
+
+  const future = day > today;
 
   const addEntry = async () => {
-    if (!data) return;
+    if (!data || future) return;
+    // The backend rejects entries ending in the future: today stops at now, else an earlier gap.
+    const busy = data.day.lunch ? [...data.day.segments, data.day.lunch] : data.day.segments;
+    const slot = entrySlot(day, today, Math.min(now, Date.now()), busy);
+    if (!slot) {
+      toast(t.noRoomForEntry);
+      return;
+    }
     try {
       const snap = await api.getSnapshot();
       const projectId = snap.recents[0]?.project.id ?? data.projects.find((p) => !p.archived)?.id;
@@ -62,10 +74,7 @@ export function DayView({ day, today, now, reloadKey, onDayChange, onBack }: Pro
         toast(t.noProject);
         return;
       }
-      const last = data.day.segments[data.day.segments.length - 1];
-      const start = last ? last.end : atLocal(day, "09:00");
-      const dayEnd = atLocal(addDays(day, 1), "00:00") - 60_000;
-      await api.addEntry(projectId, start, Math.min(start + HOUR, dayEnd));
+      await api.addEntry(projectId, slot[0], slot[1]);
     } catch (e) {
       toast(errMsg(e));
     }
@@ -160,7 +169,7 @@ export function DayView({ day, today, now, reloadKey, onDayChange, onBack }: Pro
           <b className="min-w-[200px] text-center text-[19px] font-semibold">{title}</b>
           <NavButton label={t.nextDay} onClick={() => onDayChange(addDays(day, 1))}>›</NavButton>
         </div>
-        <Button size="sm" onClick={() => void addEntry()}>{t.addEntry}</Button>
+        <Button size="sm" disabled={future} title={future ? t.futureDay : undefined} onClick={() => void addEntry()}>{t.addEntry}</Button>
       </div>
 
       {calc && (
