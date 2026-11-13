@@ -17,6 +17,13 @@ use crate::window::{self, OverlayState};
 
 const TRAY_ID: &str = "main";
 
+/// macOS: black template image (the system tints it for light/dark menu bars).
+/// Elsewhere there is no template tinting and the taskbar is dark by default: white glyph.
+#[cfg(target_os = "macos")]
+const TRAY_ICON: &[u8] = include_bytes!("../../icons/tray/tray.png");
+#[cfg(not(target_os = "macos"))]
+const TRAY_ICON: &[u8] = include_bytes!("../../icons/tray/tray-white.png");
+
 /// Menu-bar title: `H:MM` while running, `pausado` (in `lang`) while paused, nothing when idle.
 pub fn tray_title(s: &TrackerSnapshot, lang: Lang) -> Option<String> {
     match s.status {
@@ -119,10 +126,10 @@ pub fn set_language(app: &AppHandle, lang: Lang) {
 
 pub fn setup_tray(app: &AppHandle, lang: Lang) -> tauri::Result<TrayIcon> {
     let menu = build_menu(app, lang)?;
-    let icon = Image::from_bytes(include_bytes!("../../icons/tray/tray.png"))?;
+    let icon = Image::from_bytes(TRAY_ICON)?;
     let tray = TrayIconBuilder::with_id(TRAY_ID)
         .icon(icon)
-        .icon_as_template(true)
+        .icon_as_template(cfg!(target_os = "macos"))
         .tooltip("Timewatch")
         .menu(&menu)
         .show_menu_on_left_click(false)
@@ -243,6 +250,23 @@ mod tests {
             notice_key: None,
             last_closed_entry: None,
         }
+    }
+
+    #[test]
+    fn tray_icons_black_template_and_white_variant() {
+        let black = Image::from_bytes(include_bytes!("../../icons/tray/tray.png")).unwrap();
+        let white = Image::from_bytes(include_bytes!("../../icons/tray/tray-white.png")).unwrap();
+        assert_eq!((black.width(), black.height()), (white.width(), white.height()));
+        let (b, w) = (black.rgba(), white.rgba());
+        // Same shape (alpha), opposite color.
+        for (bp, wp) in b.chunks(4).zip(w.chunks(4)) {
+            assert_eq!(bp[3], wp[3]);
+            if wp[3] > 0 {
+                assert_eq!(&wp[..3], &[255, 255, 255]);
+                assert_eq!(&bp[..3], &[0, 0, 0]);
+            }
+        }
+        assert!(w.chunks(4).any(|p| p[3] > 0));
     }
 
     #[test]
