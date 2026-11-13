@@ -10,6 +10,29 @@ use super::time::{at, day_bounds};
 use super::{Entry, Lunch, Ms, Project, Settings};
 
 const MIN_MS: i64 = 60_000;
+/// A break between entries counts as the day's lunch when it overlaps the lunch reference
+/// time give or take this much (spec 6.4 decision: ±2 h).
+const LUNCH_GAP_WINDOW_MS: i64 = 2 * 60 * MIN_MS;
+
+/// Whether two consecutive segments leave a gap of at least `lunch_ms` that overlaps
+/// `[reference - 2h, reference + 2h]`. Time before the first or after the last segment is not
+/// a gap.
+fn has_lunch_gap(segments: &[Seg], reference: Ms, lunch_ms: i64) -> bool {
+    let (lo, hi) = (
+        reference - LUNCH_GAP_WINDOW_MS,
+        reference + LUNCH_GAP_WINDOW_MS,
+    );
+    let mut covered_until = None::<Ms>;
+    for g in segments {
+        if let Some(prev) = covered_until {
+            if g.start - prev >= lunch_ms && prev < hi && g.start > lo {
+                return true;
+            }
+        }
+        covered_until = Some(covered_until.map_or(g.end, |c| c.max(g.end)));
+    }
+    false
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -104,12 +127,16 @@ pub fn day_calc<Tz: TimeZone>(
         LunchStatus::Pending
     } else {
         let reference = at(tz, day, s.lunch_ref);
-        match segments
+        let lunch_ms = s.lunch_min as i64 * MIN_MS;
+        let covering = segments
             .iter()
-            .position(|g| g.start <= reference && reference < g.end)
-        {
+            .position(|g| g.start <= reference && reference < g.end);
+        match covering {
+            // The day already has a break as long as lunch near the reference (a discounted
+            // absence, an unmarked lunch): that was the lunch, so do not discount again.
+            Some(_) if has_lunch_gap(&segments, reference, lunch_ms) => LunchStatus::NoneRunning,
             Some(i) => {
-                let ms = lens[i].min(s.lunch_min as i64 * MIN_MS);
+                let ms = lens[i].min(lunch_ms);
                 lens[i] -= ms;
                 auto_lunch = Some(AutoLunch {
                     project_id: segments[i].project_id,
@@ -524,8 +551,10 @@ mod tests {
 
     #[test]
     fn lunch_disabled_when_zero_minutes() {
-        let mut s = Settings::default();
-        s.lunch_min = 0;
+        let s = Settings {
+            lunch_min: 0,
+            ..Settings::default()
+        };
         let c = day_calc(
             &tz(),
             day(),
@@ -564,12 +593,77 @@ mod tests {
         );
     }
 
+    /// Entries around a gap the user already took off (a discounted absence or an unmarked
+    /// lunch): the day is already lunch-free, so auto-lunch must not discount again.
+    fn gap_day(gap_start: &str, gap_end: &str) -> DayCalc {
+        let entries = vec![
+            e(1, 1, t("09:00"), Some(t(gap_start))),
+            e(2, 1, t(gap_end), Some(t("18:00"))),
+        ];
+        day_calc(
+            &tz(),
+            day(),
+            today_after(),
+            &entries,
+            &[],
+            &Settings::default(),
+            t("23:00"),
+        )
+    }
+
+    #[test]
+    fn discounted_absence_at_lunchtime_prevents_auto_lunch() {
+        // Discounted 12:30-13:40: the 09:00-12:30 block covers the 12:00 reference.
+        let c = gap_day("12:30", "13:40");
+        assert_eq!(c.lunch_status, LunchStatus::NoneRunning);
+        assert_eq!(c.auto_lunch, None);
+        let a = c.per_project[&1];
+        assert_eq!(a.normal_ms + a.extra_ms, 3 * H + 30 * M + 4 * H + 20 * M);
+    }
+
+    #[test]
+    fn unmarked_lunch_gap_prevents_auto_lunch() {
+        // Lunch 10:30-11:30 marked then unmarked: entries stay split around it.
+        let c = gap_day("10:30", "11:30");
+        assert_eq!(c.auto_lunch, None);
+        assert_eq!(c.lunch_status, LunchStatus::NoneRunning);
+        let a = c.per_project[&1];
+        assert_eq!(a.normal_ms + a.extra_ms, 8 * H);
+    }
+
+    #[test]
+    fn short_or_distant_gaps_keep_auto_lunch() {
+        // 20 min coffee near noon: shorter than the lunch duration.
+        let c = gap_day("12:30", "12:50");
+        assert_eq!(c.lunch_status, LunchStatus::Auto);
+        assert_eq!(c.auto_lunch.map(|l| l.ms), Some(H));
+        // A long gap far from the reference (ends before 10:00, starts after 14:00).
+        let entries = vec![
+            e(1, 1, t("07:00"), Some(t("08:00"))),
+            e(2, 1, t("09:30"), Some(t("14:30"))),
+            e(3, 1, t("16:30"), Some(t("18:00"))),
+        ];
+        let c = day_calc(
+            &tz(),
+            day(),
+            today_after(),
+            &entries,
+            &[],
+            &Settings::default(),
+            t("23:00"),
+        );
+        assert_eq!(c.lunch_status, LunchStatus::Auto);
+        assert_eq!(c.auto_lunch.map(|l| l.ms), Some(H));
+    }
+
     #[test]
     fn zero_jornada_all_extra() {
         let sat = d(2026, 11, 14);
         let entries = vec![e(1, 1, t_on(sat, "10:00"), Some(t_on(sat, "12:30")))];
-        let mut s0 = Settings::default();
-        s0.lunch_min = 0;
+        let s0 = Settings {
+            lunch_min: 0,
+            ..Settings::default()
+        };
         let c = day_calc(
             &tz(),
             sat,
@@ -589,9 +683,11 @@ mod tests {
         );
 
         let mon = d(2026, 11, 9);
-        let mut s = Settings::default();
-        s.lunch_min = 0;
-        s.holidays.push(mon);
+        let s = Settings {
+            lunch_min: 0,
+            holidays: vec![mon],
+            ..Settings::default()
+        };
         let entries = vec![e(1, 1, t_on(mon, "10:00"), Some(t_on(mon, "12:30")))];
         let c = day_calc(
             &tz(),
@@ -617,8 +713,10 @@ mod tests {
         let d1 = day();
         let d2 = d(2026, 11, 12);
         let entries = vec![e(1, 1, t_on(d1, "22:00"), Some(t_on(d2, "01:30")))];
-        let mut s = Settings::default();
-        s.lunch_min = 0;
+        let s = Settings {
+            lunch_min: 0,
+            ..Settings::default()
+        };
         let c1 = day_calc(
             &tz(),
             d1,
@@ -649,8 +747,10 @@ mod tests {
     #[test]
     fn running_entry_counts_until_now() {
         let entries = vec![e(1, 1, t("08:00"), None)];
-        let mut s = Settings::default();
-        s.lunch_min = 0;
+        let s = Settings {
+            lunch_min: 0,
+            ..Settings::default()
+        };
         let c = day_calc(&tz(), day(), day(), &entries, &[], &s, t("10:00"));
         assert_eq!(c.per_project[&1].normal_ms, 2 * H);
         assert!(c.segments[0].running);
@@ -687,9 +787,11 @@ mod tests {
 
     #[test]
     fn week_client_grouping_sums_rounded_projects() {
-        let mut s = Settings::default();
-        s.rounding_min = 15;
-        s.lunch_min = 0;
+        let s = Settings {
+            rounding_min: 15,
+            lunch_min: 0,
+            ..Settings::default()
+        };
         let projects = vec![proj(1, "P1", "X"), proj(2, "P2", "X")];
         let entries = vec![
             e(1, 1, t_on(mon(), "09:00"), Some(t_on(mon(), "10:07"))),
@@ -848,8 +950,10 @@ mod tests {
 
     #[test]
     fn week_marks_holidays() {
-        let mut s = Settings::default();
-        s.holidays.push(d(2026, 11, 11));
+        let s = Settings {
+            holidays: vec![d(2026, 11, 11)],
+            ..Settings::default()
+        };
         let r = week_report(
             &tz(),
             mon(),

@@ -4,7 +4,7 @@
 use chrono::NaiveDate;
 
 use super::{Absence, Session, META_PAUSED, META_SESSION};
-use crate::domain::{Entry, Lunch, Project};
+use crate::domain::{Entry, Lunch, Ms, Project};
 use crate::store::{repo, Db, StoreError};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -14,8 +14,8 @@ pub enum UndoOp {
     /// Remove a row the operation inserted.
     DeleteEntry(i64),
     /// Put a deleted project back with its id. Recorded after its entries so that, applied
-    /// in reverse, the project exists before they are re-inserted.
-    RestoreProject(Project),
+    /// in reverse, the project exists before they are re-inserted. Carries its `created_at`.
+    RestoreProject(Project, Ms),
     RestoreLunch(Lunch),
     DeleteLunch(NaiveDate),
     /// Session and paused flag as they were.
@@ -39,7 +39,7 @@ impl UndoLog {
         for op in self.ops.into_iter().rev() {
             match op {
                 UndoOp::RestoreEntry(e) => repo::put_entry(db, &e)?,
-                UndoOp::RestoreProject(p) => repo::put_project(db, &p)?,
+                UndoOp::RestoreProject(p, created_at) => repo::put_project(db, &p, created_at)?,
                 UndoOp::DeleteEntry(id) => repo::delete_entry(db, id)?,
                 UndoOp::RestoreLunch(l) => repo::upsert_lunch(db, &l)?,
                 UndoOp::DeleteLunch(day) => repo::delete_lunch(db, day)?,

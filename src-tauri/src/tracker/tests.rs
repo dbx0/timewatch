@@ -475,10 +475,11 @@ fn reconcile_never_closes_before_entry_start() {
 }
 
 #[test]
-fn quit_with_pending_absence_closes_at_absence_start() {
+fn quit_with_pending_absence_keeps_the_time_and_closes_at_now() {
+    // An unanswered absence counts as Keep: quitting never discounts on its own.
     let (mut tr, a, _) = with_absence();
     tr.quit(t(13, 12)).unwrap();
-    assert_eq!(all_entries(&tr), vec![e(1, a.id, t(9, 0), Some(t(12, 5)))]);
+    assert_eq!(all_entries(&tr), vec![e(1, a.id, t(9, 0), Some(t(13, 12)))]);
     let s = snap(&tr, t(13, 12));
     assert_eq!(s.status, ClockStatus::Idle);
     assert_eq!(s.pending_absence, None);
@@ -1066,7 +1067,7 @@ fn notices_render_in_the_current_language() {
 #[test]
 fn delete_project_without_entries() {
     let (mut tr, a, b) = setup();
-    let d = tr.delete_project(a.id, t(9, 0)).unwrap();
+    let d = tr.delete_project(a.id).unwrap();
     assert_eq!((d.project.id, d.entries, d.ms), (a.id, 0, 0));
     assert_eq!(
         tr.projects()
@@ -1091,7 +1092,7 @@ fn delete_project_removes_its_entries_only() {
             ms: 90 * MIN
         }
     );
-    let d = tr.delete_project(a.id, t(12, 0)).unwrap();
+    let d = tr.delete_project(a.id).unwrap();
     assert_eq!((d.entries, d.ms), (2, 90 * MIN));
     let es = all_entries(&tr);
     assert_eq!(es.len(), 1);
@@ -1103,25 +1104,25 @@ fn delete_project_refuses_session_project_running_or_paused() {
     let (mut tr, a, b) = setup();
     tr.switch_to(a.id, t(9, 0)).unwrap();
     assert!(matches!(
-        tr.delete_project(a.id, t(9, 5)),
+        tr.delete_project(a.id),
         Err(TrackerError::ProjectInSession)
     ));
     tr.pause(t(9, 10)).unwrap();
     assert!(matches!(
-        tr.delete_project(a.id, t(9, 15)),
+        tr.delete_project(a.id),
         Err(TrackerError::ProjectInSession)
     ));
-    assert!(tr.delete_project(b.id, t(9, 15)).is_ok());
+    assert!(tr.delete_project(b.id).is_ok());
     assert_eq!(all_entries(&tr).len(), 1);
     tr.stop(t(9, 20)).unwrap();
-    assert!(tr.delete_project(a.id, t(9, 30)).is_ok());
+    assert!(tr.delete_project(a.id).is_ok());
 }
 
 #[test]
 fn delete_project_unknown_id_is_not_found() {
     let (mut tr, _, _) = setup();
     assert!(matches!(
-        tr.delete_project(999, t(9, 0)),
+        tr.delete_project(999),
         Err(TrackerError::NotFound)
     ));
     assert!(matches!(tr.project_usage(999), Err(TrackerError::NotFound)));
@@ -1134,7 +1135,7 @@ fn undo_delete_project_restores_project_and_entries_with_same_ids() {
     let e2 = tr.add_entry(a.id, t(10, 0), t(10, 30), t(12, 0)).unwrap();
     let before_projects = tr.projects().unwrap();
     let before_entries = all_entries(&tr);
-    tr.delete_project(a.id, t(12, 0)).unwrap();
+    tr.delete_project(a.id).unwrap();
     assert!(snap(&tr, t(12, 0)).can_undo);
     assert!(tr.undo(t(12, 1)).unwrap());
     assert_eq!(tr.projects().unwrap(), before_projects);
@@ -1156,4 +1157,218 @@ fn failed_delete_project_rolls_back() {
     assert!(r.is_err());
     assert_eq!(tr.projects().unwrap().len(), 2);
     assert_eq!(all_entries(&tr).len(), 1);
+}
+
+#[test]
+fn undo_delete_project_keeps_its_created_at() {
+    let (mut tr, a, _) = setup();
+    tr.db
+        .conn()
+        .execute("UPDATE projects SET created_at = 42 WHERE id = ?1", [a.id])
+        .unwrap();
+    tr.delete_project(a.id).unwrap();
+    tr.undo(t(12, 0)).unwrap();
+    let created: i64 = tr
+        .db
+        .conn()
+        .query_row(
+            "SELECT created_at FROM projects WHERE id = ?1",
+            [a.id],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(created, 42);
+}
+
+// ---- session time after editing closed blocks ----
+
+/// A on 09:00–10:00 (paused), resumed 10:30: the session holds one closed block of 60 min.
+fn paused_and_resumed() -> (Tracker, Project, Project) {
+    let (mut tr, a, b) = setup();
+    tr.switch_to(a.id, t(9, 0)).unwrap();
+    tr.pause(t(10, 0)).unwrap();
+    tr.resume(t(10, 30)).unwrap();
+    assert_eq!(snap(&tr, t(11, 0)).session_ms, 90 * MIN);
+    (tr, a, b)
+}
+
+#[test]
+fn editing_a_closed_block_of_the_session_updates_session_time() {
+    let (mut tr, _, _) = paused_and_resumed();
+    tr.update_entry(1, None, Some(t(9, 30)), None, t(11, 0))
+        .unwrap();
+    assert_eq!(snap(&tr, t(11, 0)).session_ms, 60 * MIN);
+    tr.update_entry(1, Some(t(9, 10)), Some(t(10, 10)), None, t(11, 0))
+        .unwrap();
+    assert_eq!(snap(&tr, t(11, 0)).session_ms, 90 * MIN);
+    tr.undo(t(11, 0)).unwrap();
+    assert_eq!(snap(&tr, t(11, 0)).session_ms, 60 * MIN);
+}
+
+#[test]
+fn moving_a_closed_block_out_of_the_session_project_updates_session_time() {
+    let (mut tr, _, b) = paused_and_resumed();
+    tr.update_entry(1, None, None, Some(b.id), t(11, 0))
+        .unwrap();
+    assert_eq!(snap(&tr, t(11, 0)).session_ms, 30 * MIN);
+}
+
+#[test]
+fn deleting_a_closed_block_of_the_session_updates_session_time() {
+    let (mut tr, a, _) = paused_and_resumed();
+    tr.delete_entry(1).unwrap();
+    let s = snap(&tr, t(11, 0));
+    assert_eq!(s.status, ClockStatus::Running);
+    assert_eq!(s.session_project.map(|p| p.id), Some(a.id));
+    assert_eq!(s.session_ms, 30 * MIN);
+    tr.undo(t(11, 0)).unwrap();
+    assert_eq!(snap(&tr, t(11, 0)).session_ms, 90 * MIN);
+}
+
+#[test]
+fn editing_a_block_before_the_session_leaves_session_time() {
+    let (mut tr, a, _) = setup();
+    tr.add_entry(a.id, t(7, 0), t(8, 0), t(9, 0)).unwrap();
+    tr.switch_to(a.id, t(9, 0)).unwrap();
+    tr.update_entry(1, None, Some(t(7, 30)), None, t(9, 30))
+        .unwrap();
+    assert_eq!(snap(&tr, t(9, 30)).session_ms, 30 * MIN);
+    tr.delete_entry(1).unwrap();
+    assert_eq!(snap(&tr, t(9, 30)).session_ms, 30 * MIN);
+}
+
+// ---- absence questions are not lost ----
+
+fn stop_on_sleep(tr: &mut Tracker) {
+    let mut st = tr.settings().unwrap();
+    st.stop_on_sleep = true;
+    tr.set_settings(st).unwrap();
+}
+
+/// `with_absence` (idle 12:05–13:10 unanswered), then the lid closes at 13:20 with
+/// stop-on-sleep and the machine wakes at 14:00.
+fn absence_then_stop_on_sleep() -> (Tracker, Project, Project) {
+    let (mut tr, a, b) = with_absence();
+    stop_on_sleep(&mut tr);
+    assert!(!tr
+        .begin_sleep_absence(&tz(), t(13, 15), t(13, 20), t(14, 0))
+        .unwrap());
+    (tr, a, b)
+}
+
+#[test]
+fn stop_on_sleep_keeps_a_pending_idle_question() {
+    let (tr, a, _) = absence_then_stop_on_sleep();
+    assert_eq!(all_entries(&tr), vec![e(1, a.id, t(9, 0), Some(t(13, 20)))]);
+    let s = snap(&tr, t(14, 0));
+    assert_eq!(s.status, ClockStatus::Idle);
+    assert!(s.notice.is_some());
+    let p = s
+        .pending_absence
+        .expect("the idle question survives the sleep");
+    assert_eq!((p.start, p.end), (t(12, 5), t(13, 10)));
+}
+
+#[test]
+fn discounting_a_question_on_a_closed_block_splits_it() {
+    let (mut tr, a, _) = absence_then_stop_on_sleep();
+    tr.resolve_absence(&tz(), AbsenceResolution::Discount, t(14, 0))
+        .unwrap();
+    assert_eq!(
+        all_entries(&tr),
+        vec![
+            e(1, a.id, t(9, 0), Some(t(12, 5))),
+            e(2, a.id, t(13, 10), Some(t(13, 20))),
+        ]
+    );
+    let s = snap(&tr, t(14, 0));
+    assert_eq!(s.status, ClockStatus::Idle);
+    assert_eq!(s.pending_absence, None);
+    tr.undo(t(14, 1)).unwrap();
+    assert_eq!(all_entries(&tr), vec![e(1, a.id, t(9, 0), Some(t(13, 20)))]);
+    assert_eq!(snap(&tr, t(14, 1)).status, ClockStatus::Idle);
+    assert!(snap(&tr, t(14, 1)).pending_absence.is_some());
+}
+
+#[test]
+fn lunch_and_move_on_a_closed_block() {
+    let (mut tr, a, b) = absence_then_stop_on_sleep();
+    tr.resolve_absence(&tz(), AbsenceResolution::MoveTo(b.id), t(14, 0))
+        .unwrap();
+    assert_eq!(
+        all_entries(&tr),
+        vec![
+            e(1, a.id, t(9, 0), Some(t(12, 5))),
+            e(2, b.id, t(12, 5), Some(t(13, 10))),
+            e(3, a.id, t(13, 10), Some(t(13, 20))),
+        ]
+    );
+    tr.undo(t(14, 1)).unwrap();
+    tr.resolve_absence(&tz(), AbsenceResolution::Lunch, t(14, 1))
+        .unwrap();
+    assert_eq!(
+        repo::lunches_between(&tr.db, day(), day()).unwrap(),
+        vec![Lunch {
+            day: day(),
+            start: t(12, 5),
+            end: t(13, 10)
+        }]
+    );
+    assert_eq!(snap(&tr, t(14, 1)).status, ClockStatus::Idle);
+}
+
+#[test]
+fn undoing_a_resolution_keeps_a_newer_question() {
+    let (mut tr, a, _) = with_absence();
+    tr.resolve_absence(&tz(), AbsenceResolution::Discount, t(13, 10))
+        .unwrap();
+    // A new idle period while the undo toast is still there.
+    assert!(tr
+        .begin_absence(&tz(), t(13, 30), t(14, 0), AbsenceReason::Idle)
+        .unwrap());
+    tr.undo(t(14, 0)).unwrap();
+    assert_eq!(all_entries(&tr), vec![e(1, a.id, t(9, 0), None)]);
+    let p = snap(&tr, t(14, 0)).pending_absence.unwrap();
+    assert_eq!((p.start, p.end), (t(13, 30), t(14, 0)));
+}
+
+// ---- settings validation ----
+
+#[test]
+fn user_settings_are_clamped_to_valid_ranges() {
+    let (mut tr, _, _) = setup();
+    let mut st = tr.settings().unwrap();
+    st.idle_min = 0;
+    st.lunch_min = 10_000;
+    st.rounding_min = 7;
+    st.jornada_h = [f32::NAN, -3., 30., f32::INFINITY, 8.5, 0., 24.];
+    tr.set_user_settings(st).unwrap();
+    let got = tr.settings().unwrap();
+    assert_eq!(got.idle_min, 1);
+    assert_eq!(got.lunch_min, 240);
+    assert_eq!(got.rounding_min, 0);
+    assert_eq!(got.jornada_h, [0., 0., 24., 0., 8.5, 0., 24.]);
+
+    let mut st = tr.settings().unwrap();
+    st.idle_min = 999;
+    st.rounding_min = 20;
+    tr.set_user_settings(st).unwrap();
+    let got = tr.settings().unwrap();
+    assert_eq!((got.idle_min, got.rounding_min), (240, 15));
+    let mut st = tr.settings().unwrap();
+    st.rounding_min = 45;
+    tr.set_user_settings(st).unwrap();
+    assert_eq!(tr.settings().unwrap().rounding_min, 30);
+}
+
+#[test]
+fn valid_user_settings_are_kept() {
+    let (mut tr, _, _) = setup();
+    let mut st = tr.settings().unwrap();
+    st.idle_min = 20;
+    st.lunch_min = 0;
+    st.rounding_min = 30;
+    st.jornada_h = [6., 6., 6., 6., 6., 0., 0.];
+    tr.set_user_settings(st.clone()).unwrap();
+    assert_eq!(tr.settings().unwrap(), st);
 }

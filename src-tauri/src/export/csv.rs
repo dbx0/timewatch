@@ -4,7 +4,7 @@ use crate::domain::calc::{round_ms, DayCalc};
 use crate::domain::Project;
 use crate::i18n::Lang;
 
-use super::fmt_hours;
+use super::{client_label, fmt_hours};
 
 const BOM: &str = "\u{feff}";
 
@@ -12,6 +12,16 @@ const BOM: &str = "\u{feff}";
 pub(super) fn field(s: &str, sep: char) -> String {
     if s.contains([sep, '"', '\r', '\n']) {
         format!("\"{}\"", s.replace('"', "\"\""))
+    } else {
+        s.to_string()
+    }
+}
+
+/// Free text (client, project, note) a spreadsheet must not run as a formula: a leading
+/// `= + - @`, tab or carriage return gets a `'` prefix. Numeric columns never pass here.
+pub(super) fn text(s: &str) -> String {
+    if s.starts_with(['=', '+', '-', '@', '\t', '\r']) {
+        format!("'{s}")
     } else {
         s.to_string()
     }
@@ -28,11 +38,14 @@ fn line(fields: &[&str], lang: Lang) -> String {
     l
 }
 
-fn names(projects: &[Project], id: i64) -> (&str, &str) {
+/// Client (as displayed) and project name of `id`, both formula-safe.
+fn names(projects: &[Project], id: i64, lang: Lang) -> (String, String) {
     projects
         .iter()
         .find(|p| p.id == id)
-        .map_or(("", ""), |p| (p.client.as_str(), p.name.as_str()))
+        .map_or((String::new(), String::new()), |p| {
+            (text(client_label(&p.client, lang)), text(&p.name))
+        })
 }
 
 /// One row per day per project with time; normal and extra rounded separately (spec 6.6),
@@ -46,12 +59,12 @@ pub fn csv_summary(
     let mut out = String::from(BOM);
     out.push_str(&line(&lang.strings().csv_summary_header, lang));
     for d in days {
-        let mut rows: Vec<(&str, &str, i64, i64)> = d
+        let mut rows: Vec<(String, String, i64, i64)> = d
             .per_project
             .iter()
             .filter(|(_, pd)| pd.normal_ms + pd.extra_ms > 0)
             .map(|(id, pd)| {
-                let (c, n) = names(projects, *id);
+                let (c, n) = names(projects, *id, lang);
                 (
                     c,
                     n,
@@ -65,8 +78,8 @@ pub fn csv_summary(
             out.push_str(&line(
                 &[
                     &d.day.format("%Y-%m-%d").to_string(),
-                    c,
-                    n,
+                    &c,
+                    &n,
                     &fmt_hours(normal, lang),
                     &fmt_hours(extra, lang),
                     &fmt_hours(normal + extra, lang),
@@ -88,6 +101,8 @@ pub(super) fn hhmm<Tz: TimeZone>(tz: &Tz, ms: i64) -> String {
 }
 
 /// One row per segment, `HH:MM` in `tz`, exact (unrounded) duration, and the entry's note.
+/// A day with automatic lunch gets one more row with the negative discount (no times), so the
+/// rows add up to the summary.
 pub fn csv_detailed<Tz: TimeZone>(
     days: &[DayCalc],
     projects: &[Project],
@@ -97,17 +112,33 @@ pub fn csv_detailed<Tz: TimeZone>(
     let mut out = String::from(BOM);
     out.push_str(&line(&lang.strings().csv_detailed_header, lang));
     for d in days {
+        let date = d.day.format("%Y-%m-%d").to_string();
         for s in &d.segments {
-            let (c, n) = names(projects, s.project_id);
+            let (c, n) = names(projects, s.project_id, lang);
             out.push_str(&line(
                 &[
-                    &d.day.format("%Y-%m-%d").to_string(),
-                    c,
-                    n,
+                    &date,
+                    &c,
+                    &n,
                     &hhmm(tz, s.start),
                     &hhmm(tz, s.end),
                     &fmt_hours(s.end - s.start, lang),
-                    s.note.as_deref().unwrap_or(""),
+                    &text(s.note.as_deref().unwrap_or("")),
+                ],
+                lang,
+            ));
+        }
+        if let Some(l) = &d.auto_lunch {
+            let (c, n) = names(projects, l.project_id, lang);
+            out.push_str(&line(
+                &[
+                    &date,
+                    &c,
+                    &n,
+                    "",
+                    "",
+                    &fmt_hours(-l.ms, lang),
+                    &text(lang.strings().auto_lunch),
                 ],
                 lang,
             ));
@@ -120,7 +151,7 @@ pub fn csv_detailed<Tz: TimeZone>(
 mod tests {
     use super::*;
     use crate::domain::calc::LunchStatus;
-    use crate::domain::calc::{ProjectDay, Seg};
+    use crate::domain::calc::{AutoLunch, ProjectDay, Seg};
     use crate::i18n::Lang;
     use chrono::{FixedOffset, NaiveDate};
     use std::collections::BTreeMap;
@@ -260,6 +291,109 @@ mod tests {
             out.ends_with(
                 "2026-11-11;Acme;Alpha;09:00;10:00;1;\"revisão; \"\"PR\"\"\nlinha 2\"\r\n"
             ),
+            "{out}"
+        );
+    }
+
+    #[test]
+    fn csv_text_fields_cannot_start_a_formula() {
+        let projects = [
+            proj(1, "=HYPERLINK(\"x\")", "+Acme"),
+            proj(2, "@SUM(A1)", "-1"),
+            proj(3, "\tTab", "\rCr"),
+        ];
+        let d = calc(vec![], &[(1, H, 0), (2, H, 0), (3, H, 0)]);
+        let out = csv_summary(&[d], &projects, 0, Lang::PtBr);
+        assert!(
+            out.contains("2026-11-11;'+Acme;\"'=HYPERLINK(\"\"x\"\")\";1;0;1\r\n"),
+            "{out}"
+        );
+        assert!(out.contains("2026-11-11;'-1;'@SUM(A1);1;0;1\r\n"), "{out}");
+        assert!(
+            out.contains("2026-11-11;\"'\rCr\";'\tTab;1;0;1\r\n"),
+            "{out}"
+        );
+        let start = tz()
+            .with_ymd_and_hms(2026, 11, 11, 9, 0, 0)
+            .unwrap()
+            .timestamp_millis();
+        let seg = Seg {
+            entry_id: 1,
+            project_id: 1,
+            start,
+            end: start + H,
+            running: false,
+            note: Some("=1+1".into()),
+        };
+        let out = csv_detailed(
+            &[calc(vec![seg], &[(1, H, 0)])],
+            &projects,
+            &tz(),
+            Lang::PtBr,
+        );
+        assert!(out.ends_with(";09:00;10:00;1;'=1+1\r\n"), "{out}");
+    }
+
+    #[test]
+    fn csv_numbers_are_not_prefixed() {
+        assert_eq!(field("-1,5", ';'), "-1,5");
+        assert_eq!(text("-1,5"), "'-1,5");
+        assert_eq!(text("Acme"), "Acme");
+        assert_eq!(text(""), "");
+    }
+
+    #[test]
+    fn csv_empty_client_is_the_no_client_label() {
+        let projects = [proj(1, "Alpha", "")];
+        let d = calc(vec![], &[(1, H, 0)]);
+        let out = csv_summary(std::slice::from_ref(&d), &projects, 0, Lang::PtBr);
+        assert!(
+            out.contains("2026-11-11;Sem cliente;Alpha;1;0;1\r\n"),
+            "{out}"
+        );
+        let out = csv_summary(std::slice::from_ref(&d), &projects, 0, Lang::En);
+        assert!(
+            out.contains("2026-11-11,No client,Alpha,1,0,1\r\n"),
+            "{out}"
+        );
+        let out = csv_summary(&[d], &projects, 0, Lang::Es);
+        assert!(
+            out.contains("2026-11-11;Sin cliente;Alpha;1;0;1\r\n"),
+            "{out}"
+        );
+    }
+
+    #[test]
+    fn csv_detailed_lists_auto_lunch_so_rows_add_up() {
+        let projects = [proj(1, "Alpha", "Acme")];
+        let start = tz()
+            .with_ymd_and_hms(2026, 11, 11, 9, 0, 0)
+            .unwrap()
+            .timestamp_millis();
+        let seg = Seg {
+            entry_id: 1,
+            project_id: 1,
+            start,
+            end: start + 9 * H,
+            running: false,
+            note: None,
+        };
+        let mut d = calc(vec![seg], &[(1, 8 * H, 0)]);
+        d.auto_lunch = Some(AutoLunch {
+            project_id: 1,
+            ms: H,
+        });
+        d.lunch_status = LunchStatus::Auto;
+        let out = csv_detailed(std::slice::from_ref(&d), &projects, &tz(), Lang::PtBr);
+        assert!(
+            out.ends_with(
+                "2026-11-11;Acme;Alpha;09:00;18:00;9;\r\n2026-11-11;Acme;Alpha;;;-1;Almoço (automático)\r\n"
+            ),
+            "{out}"
+        );
+        let out = csv_detailed(&[d], &projects, &tz(), Lang::En);
+        assert!(
+            out.ends_with("2026-11-11,Acme,Alpha,,,-1,Lunch (automatic)\r\n"),
             "{out}"
         );
     }

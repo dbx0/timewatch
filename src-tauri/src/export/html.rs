@@ -1,11 +1,11 @@
 use chrono::TimeZone;
 
-use crate::domain::calc::{Cell, DayCalc, RowKind, WeekReport};
+use crate::domain::calc::{Cell, DayCalc, Grouping, RowKind, WeekReport};
 use crate::domain::Project;
 use crate::i18n::Lang;
 
 use super::csv::hhmm;
-use super::fmt_hours;
+use super::{client_label, fmt_hours};
 
 pub(super) fn esc(s: &str) -> String {
     let mut o = String::with_capacity(s.len());
@@ -33,7 +33,7 @@ th:first-child,td:first-child{text-align:left}th{font-size:12px;color:#5a6070;fo
 tr.client td{font-weight:600;background:#f3f5fa;text-align:left}\
 tr.total td{font-weight:600;border-top:2px solid #1a1d24}\
 .extra{display:block;font-size:11px;color:#2f5fd0}.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}\
-.muted{color:#5a6070}td.note{text-align:left;white-space:pre-wrap;color:#3a4050}\
+.muted{color:#5a6070}tr.lunch td{color:#5a6070;font-style:italic}td.note{text-align:left;white-space:pre-wrap;color:#3a4050}\
 @media print{body{margin:0;max-width:none;padding:0}.card,tr{break-inside:avoid}h2{break-after:avoid}}";
 
 fn cell(c: &Cell, lang: Lang) -> String {
@@ -96,8 +96,8 @@ pub fn html_report<Tz: TimeZone>(
     }
     h.push_str("</div><table><thead><tr>");
     let first = match report.grouping {
-        crate::domain::calc::Grouping::Project => t.col_project,
-        crate::domain::calc::Grouping::Client => t.col_client,
+        Grouping::Project => t.col_project,
+        Grouping::Client => t.col_client,
     };
     h.push_str(&format!("<th>{}</th>", esc(first)));
     for (i, d) in report.days.iter().enumerate() {
@@ -116,7 +116,7 @@ pub fn html_report<Tz: TimeZone>(
         if r.kind == RowKind::ClientHeader {
             h.push_str(&format!(
                 "<tr class=\"client\"><td colspan=\"9\">{}</td></tr>",
-                esc(&r.label)
+                esc(client_label(&r.label, lang))
             ));
             continue;
         }
@@ -134,7 +134,11 @@ pub fn html_report<Tz: TimeZone>(
         } else {
             String::new()
         };
-        h.push_str(&format!("<tr><td>{dot}{}{sub}</td>", esc(&r.label)));
+        let label = match report.grouping {
+            Grouping::Project => r.label.as_str(),
+            Grouping::Client => client_label(&r.label, lang),
+        };
+        h.push_str(&format!("<tr><td>{dot}{}{sub}</td>", esc(label)));
         for c in &r.cells {
             h.push_str(&cell(c, lang));
         }
@@ -187,12 +191,14 @@ pub fn html_report<Tz: TimeZone>(
             esc(t.rec_hours),
             esc(t.rec_note),
         ));
+        let names = |id: i64| {
+            projects.iter().find(|p| p.id == id).map_or(("", ""), |p| {
+                (client_label(&p.client, lang), p.name.as_str())
+            })
+        };
         for d in days {
             for s in &d.segments {
-                let (c, n) = projects
-                    .iter()
-                    .find(|p| p.id == s.project_id)
-                    .map_or(("", ""), |p| (p.client.as_str(), p.name.as_str()));
+                let (c, n) = names(s.project_id);
                 h.push_str(&format!(
                     "<tr><td>{}</td><td>{} / {}</td><td>{}</td><td>{}</td><td>{}</td><td class=\"note\">{}</td></tr>",
                     d.day.format(t.date_fmt),
@@ -202,6 +208,18 @@ pub fn html_report<Tz: TimeZone>(
                     hhmm(tz, s.end),
                     fmt_hours(s.end - s.start, lang),
                     esc(s.note.as_deref().unwrap_or(""))
+                ));
+            }
+            // The automatic lunch as its own negative row, so the records add up to the summary.
+            if let Some(l) = &d.auto_lunch {
+                let (c, n) = names(l.project_id);
+                h.push_str(&format!(
+                    "<tr class=\"lunch\"><td>{}</td><td>{} / {}</td><td></td><td></td><td>{}</td><td class=\"note\">{}</td></tr>",
+                    d.day.format(t.date_fmt),
+                    esc(c),
+                    esc(n),
+                    fmt_hours(-l.ms, lang),
+                    esc(t.auto_lunch)
                 ));
             }
         }
@@ -314,6 +332,69 @@ mod tests {
         assert!(det.contains(
             "<td class=\"note\">&lt;b&gt;deploy&lt;/b&gt; &amp; &quot;testes&quot;</td>"
         ));
+    }
+
+    fn week_days(tr: &Tracker, r: &WeekReport) -> Vec<DayCalc> {
+        let now = r
+            .week_start
+            .and_hms_opt(0, 0, 0)
+            .unwrap()
+            .and_utc()
+            .timestamp_millis()
+            + 5 * 24 * H;
+        r.days
+            .iter()
+            .map(|d| tr.day_calc(&tz(), *d, now).unwrap())
+            .collect()
+    }
+
+    #[test]
+    fn html_empty_client_is_the_no_client_label() {
+        let (tr, r) = report("", "Alpha");
+        let out = html_report(&r, None, &tz(), Lang::PtBr);
+        assert!(out.contains("<tr class=\"client\"><td colspan=\"9\">Sem cliente</td></tr>"));
+        let days = week_days(&tr, &r);
+        let projects = tr.projects().unwrap();
+        let det = html_report(&r, Some((&days, &projects)), &tz(), Lang::En);
+        assert!(det.contains("<td>No client / Alpha</td>"), "{det}");
+        let r = tr
+            .week_report(
+                &tz(),
+                r.week_start,
+                r.days[6]
+                    .and_hms_opt(23, 0, 0)
+                    .unwrap()
+                    .and_utc()
+                    .timestamp_millis(),
+                Grouping::Client,
+            )
+            .unwrap();
+        let out = html_report(&r, None, &tz(), Lang::Es);
+        assert!(out.contains("<tr><td>Sin cliente</td>"), "{out}");
+    }
+
+    #[test]
+    fn html_detailed_lists_auto_lunch() {
+        // 06:00-11:30 covers no 12:00 reference; a 10:00-15:00 block does.
+        let (mut tr, _) = report("Acme", "Alpha");
+        let day = NaiveDate::from_ymd_opt(2026, 11, 12).unwrap();
+        let s = tz()
+            .from_local_datetime(&day.and_hms_opt(10, 0, 0).unwrap())
+            .unwrap()
+            .timestamp_millis();
+        let pid = tr.projects().unwrap()[0].id;
+        tr.add_entry(pid, s, s + 5 * H, s + 20 * H).unwrap();
+        let ws = NaiveDate::from_ymd_opt(2026, 11, 9).unwrap();
+        let r = tr
+            .week_report(&tz(), ws, s + 4 * 24 * H, Grouping::Project)
+            .unwrap();
+        let days = week_days(&tr, &r);
+        let projects = tr.projects().unwrap();
+        let det = html_report(&r, Some((&days, &projects)), &tz(), Lang::PtBr);
+        assert!(
+            det.contains("<tr class=\"lunch\"><td>12/11/2026</td><td>Acme / Alpha</td><td></td><td></td><td>-1</td><td class=\"note\">Almoço (automático)</td></tr>"),
+            "{det}"
+        );
     }
 
     #[test]

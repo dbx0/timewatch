@@ -58,13 +58,26 @@ pub fn update_project(db: &Db, p: &Project) -> Result<()> {
     Ok(())
 }
 
-/// Inserts the project with its own id (used by undo of a project delete).
-pub fn put_project(db: &Db, p: &Project) -> Result<()> {
+/// When the project was created (`None` if no row has that id).
+pub fn project_created_at(db: &Db, id: i64) -> Result<Option<Ms>> {
+    Ok(db
+        .conn()
+        .query_row(
+            "SELECT created_at FROM projects WHERE id = ?1",
+            params![id],
+            |r| r.get(0),
+        )
+        .optional()?)
+}
+
+/// Inserts the project with its own id and original `created_at` (used by undo of a
+/// project delete).
+pub fn put_project(db: &Db, p: &Project, created_at: Ms) -> Result<()> {
     db.conn().execute(
         "INSERT INTO projects(id, name, client, color, archived, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
          ON CONFLICT(id) DO UPDATE SET name = excluded.name, client = excluded.client,
              color = excluded.color, archived = excluded.archived",
-        params![p.id, p.name, p.client, p.color, p.archived as i64, now_ms()],
+        params![p.id, p.name, p.client, p.color, p.archived as i64, created_at],
     )?;
     Ok(())
 }
@@ -200,17 +213,6 @@ pub fn entries_between(db: &Db, from: Ms, to: Ms) -> Result<Vec<Entry>> {
     Ok(rows)
 }
 
-pub fn last_entries(db: &Db, limit: usize) -> Result<Vec<Entry>> {
-    let mut st = db.conn().prepare(
-        "SELECT id, project_id, start, \"end\", note FROM entries
-         ORDER BY COALESCE(\"end\", start) DESC, id DESC LIMIT ?1",
-    )?;
-    let rows = st
-        .query_map(params![limit as i64], entry_from)?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
-    Ok(rows)
-}
-
 pub fn upsert_lunch(db: &Db, l: &Lunch) -> Result<()> {
     db.conn().execute(
         "INSERT INTO lunches(day, start, \"end\") VALUES (?1, ?2, ?3)
@@ -333,7 +335,7 @@ mod tests {
     }
 
     #[test]
-    fn entry_crud_and_last_entries() {
+    fn entry_crud() {
         let db = Db::open_in_memory().unwrap();
         let p = insert_project(&db, "A", "C", "#fff").unwrap();
         let mut a = insert_entry(&db, p.id, 10, Some(20)).unwrap();
@@ -341,7 +343,7 @@ mod tests {
         a.end = Some(25);
         update_entry(&db, &a).unwrap();
         assert_eq!(get_entry(&db, a.id).unwrap(), Some(a.clone()));
-        assert_eq!(last_entries(&db, 1).unwrap(), vec![b.clone()]);
+        assert_eq!(get_entry(&db, b.id).unwrap(), Some(b.clone()));
         delete_entry(&db, b.id).unwrap();
         assert_eq!(get_entry(&db, b.id).unwrap(), None);
     }

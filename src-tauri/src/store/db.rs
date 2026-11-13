@@ -8,6 +8,12 @@ pub enum StoreError {
     Sqlite(#[from] rusqlite::Error),
     #[error("json: {0}")]
     Json(#[from] serde_json::Error),
+    /// The database was written by a newer Timewatch; running older migrations could corrupt it.
+    #[error(
+        "the database (schema v{found}) is newer than this version of Timewatch supports \
+         (v{supported}); update the app"
+    )]
+    SchemaTooNew { found: i64, supported: i64 },
 }
 
 const SCHEMA_V1: &str = "
@@ -41,6 +47,13 @@ CREATE TABLE meta(
 /// v2: free-text note per entry.
 const SCHEMA_V2: &str = "ALTER TABLE entries ADD COLUMN note TEXT NULL;";
 
+/// v3: "no client" is the empty string; earlier versions stored the translated label.
+const SCHEMA_V3: &str =
+    "UPDATE projects SET client = '' WHERE client IN ('Sem cliente', 'No client', 'Sin cliente');";
+
+/// The newest schema version this build knows.
+pub(crate) const LATEST: i64 = 3;
+
 pub struct Db {
     conn: Connection,
 }
@@ -67,6 +80,12 @@ impl Db {
         let v: i64 = self
             .conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))?;
+        if v > LATEST {
+            return Err(StoreError::SchemaTooNew {
+                found: v,
+                supported: LATEST,
+            });
+        }
         if v < 1 {
             let tx = self.conn.unchecked_transaction()?;
             tx.execute_batch(SCHEMA_V1)?;
@@ -77,6 +96,12 @@ impl Db {
             let tx = self.conn.unchecked_transaction()?;
             tx.execute_batch(SCHEMA_V2)?;
             tx.pragma_update(None, "user_version", 2)?;
+            tx.commit()?;
+        }
+        if v < 3 {
+            let tx = self.conn.unchecked_transaction()?;
+            tx.execute_batch(SCHEMA_V3)?;
+            tx.pragma_update(None, "user_version", 3)?;
             tx.commit()?;
         }
         Ok(())
@@ -98,7 +123,7 @@ mod tests {
             .conn()
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(v, 2);
+        assert_eq!(v, LATEST);
     }
 
     #[test]
@@ -121,7 +146,7 @@ mod tests {
             .conn()
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(v, 2);
+        assert_eq!(v, LATEST);
         let (start, note): (i64, Option<String>) = db
             .conn()
             .query_row("SELECT start, note FROM entries WHERE id = 7", [], |r| {
@@ -129,6 +154,51 @@ mod tests {
             })
             .unwrap();
         assert_eq!((start, note), (10, None));
+    }
+
+    #[test]
+    fn v3_clears_translated_no_client_labels() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(SCHEMA_V1).unwrap();
+        conn.execute_batch(SCHEMA_V2).unwrap();
+        conn.pragma_update(None, "user_version", 2).unwrap();
+        for (id, client) in [
+            (1, "Sem cliente"),
+            (2, "No client"),
+            (3, "Sin cliente"),
+            (4, "Acme"),
+            (5, "sem cliente ltda"),
+        ] {
+            conn.execute(
+                "INSERT INTO projects(id, name, client, color, archived, created_at) VALUES (?1, 'P', ?2, '#fff', 0, 0)",
+                rusqlite::params![id, client],
+            )
+            .unwrap();
+        }
+        let db = Db::init(conn).unwrap();
+        let clients: Vec<String> = db
+            .conn()
+            .prepare("SELECT client FROM projects ORDER BY id")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert_eq!(clients, ["", "", "", "Acme", "sem cliente ltda"]);
+    }
+
+    #[test]
+    fn refuses_a_db_from_a_newer_version() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(SCHEMA_V1).unwrap();
+        conn.pragma_update(None, "user_version", LATEST + 1)
+            .unwrap();
+        let err = Db::init(conn).err().expect("newer schema must be refused");
+        assert!(matches!(
+            err,
+            StoreError::SchemaTooNew { found, supported } if found == LATEST + 1 && supported == LATEST
+        ));
+        assert!(err.to_string().contains("newer"), "{err}");
     }
 
     #[test]
@@ -142,7 +212,7 @@ mod tests {
             .conn()
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(v, 2);
+        assert_eq!(v, LATEST);
         std::fs::remove_dir_all(&dir).ok();
     }
 }

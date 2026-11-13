@@ -37,6 +37,15 @@ pub fn fmt_hours(ms: i64, lang: Lang) -> String {
     }
 }
 
+/// A client as shown in exports: the empty string (no client) is the language's label.
+pub(crate) fn client_label(client: &str, lang: Lang) -> &str {
+    if client.is_empty() {
+        lang.strings().no_client
+    } else {
+        client
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn export_week<Tz: TimeZone>(
     tracker: &Tracker,

@@ -42,6 +42,10 @@ pub enum ClockStatus {
 pub struct Session {
     pub project_id: i64,
     pub accum_ms: i64,
+    /// When the session began: its closed blocks are the project's entries starting at or after
+    /// this. Missing in sessions saved before it existed.
+    #[serde(default)]
+    pub started_at: Option<Ms>,
 }
 
 /// What a project holds: its entry count and total closed time.
@@ -324,8 +328,66 @@ fn running_session(s: Option<Session>, open: &Entry) -> Session {
         _ => Session {
             project_id: open.project_id,
             accum_ms: 0,
+            started_at: Some(open.start),
         },
     }
+}
+
+/// Keeps `accum_ms` in step when a closed block of the current session is edited (`new`) or
+/// deleted (`None`). Sessions without `started_at` cannot tell their blocks apart and are left
+/// as they are.
+fn adjust_session(db: &Db, log: &mut UndoLog, old: &Entry, new: Option<&Entry>) -> Result<()> {
+    let (Some(mut s), paused) = load_session(db)? else {
+        return Ok(());
+    };
+    let Some(since) = s.started_at else {
+        return Ok(());
+    };
+    let pid = s.project_id;
+    let len = |e: &Entry| match e.end {
+        Some(end) if e.project_id == pid && e.start >= since => (end - e.start).max(0),
+        _ => 0,
+    };
+    let delta = new.map_or(0, len) - len(old);
+    if delta == 0 {
+        return Ok(());
+    }
+    log.push(UndoOp::RestoreSession(Some(s.clone()), paused));
+    s.accum_ms = (s.accum_ms + delta).max(0);
+    save_session(db, Some(&s), paused)
+}
+
+/// The entry an absence is about: the running entry of its project or, when stop-on-sleep
+/// closed it before the question was answered, the closed entry of its project that contains
+/// the absence start.
+fn absence_entry(db: &Db, a: &Absence) -> Result<Option<Entry>> {
+    if let Some(o) = repo::open_entry(db)? {
+        if o.project_id == a.project_id && o.start <= a.start {
+            return Ok(Some(o));
+        }
+    }
+    Ok(repo::entries_between(db, a.start, a.start + 1)?
+        .into_iter()
+        .find(|e| {
+            e.project_id == a.project_id
+                && e.end.is_some_and(|end| e.start <= a.start && a.start < end)
+        }))
+}
+
+/// Settings from the UI, clamped to what the app supports: idle 1..=240 min, lunch 0..=240 min,
+/// rounding one of 0/15/30 min (nearest), workday 0..=24 h per weekday (non-finite means 0).
+fn sanitize(mut s: Settings) -> Settings {
+    s.idle_min = s.idle_min.clamp(1, 240);
+    s.lunch_min = s.lunch_min.min(240);
+    s.rounding_min = match s.rounding_min {
+        0..=7 => 0,
+        8..=22 => 15,
+        _ => 30,
+    };
+    for h in &mut s.jornada_h {
+        *h = if h.is_finite() { h.clamp(0., 24.) } else { 0. };
+    }
+    s
 }
 
 fn delete_project_in(db: &Db, log: &mut UndoLog, id: i64) -> Result<DeletedProject> {
@@ -339,7 +401,8 @@ fn delete_project_in(db: &Db, log: &mut UndoLog, id: i64) -> Result<DeletedProje
     for e in &es {
         log.push(UndoOp::RestoreEntry(e.clone()));
     }
-    log.push(UndoOp::RestoreProject(p.clone()));
+    let created_at = repo::project_created_at(db, id)?.unwrap_or(0);
+    log.push(UndoOp::RestoreProject(p.clone(), created_at));
     repo::delete_entries_of_project(db, id)?;
     repo::delete_project(db, id)?;
     Ok(DeletedProject {
@@ -481,7 +544,9 @@ impl Tracker {
 
     /// Settings saved from the UI. `onboarded` is server-owned (only `finish_onboarding` /
     /// skip change it): a Settings window opened before onboarding finished must not reset it.
-    pub fn set_user_settings(&mut self, mut s: Settings) -> Result<()> {
+    /// Out-of-range values are clamped (see `sanitize`).
+    pub fn set_user_settings(&mut self, s: Settings) -> Result<()> {
+        let mut s = sanitize(s);
         s.onboarded = self.settings()?.onboarded;
         self.set_settings(s)
     }
@@ -519,6 +584,7 @@ impl Tracker {
                 Some(&Session {
                     project_id: pid,
                     accum_ms: 0,
+                    started_at: Some(now),
                 }),
                 false,
             )
@@ -561,6 +627,7 @@ impl Tracker {
                     Some(&Session {
                         project_id: ids[i],
                         accum_ms: 0,
+                        started_at: Some(now),
                     }),
                     false,
                 )?;
@@ -687,7 +754,12 @@ impl Tracker {
                 close_entry(db, log, &open, stop_at)?;
                 save_session(db, None, false)
             })?;
-            self.pending = None;
+            // An unanswered question about time before the sleep still applies to the block
+            // just closed: keep it, so the choice is not lost and nothing is discounted unasked.
+            self.pending = self
+                .pending
+                .take()
+                .filter(|a| a.project_id == open.project_id && a.start < stop_at);
             self.notice = Some(Notice::Sleep {
                 at: stop_at,
                 hhmm: hhmm(tz, stop_at),
@@ -705,7 +777,8 @@ impl Tracker {
     }
 
     /// Applies the user's answer to the pending absence (spec 6.3). Undoable; undo also
-    /// brings the question back.
+    /// brings the question back. On a block already closed (stop-on-sleep after the absence),
+    /// the block is split the same way and the clock stays stopped.
     pub fn resolve_absence<Tz: TimeZone>(
         &mut self,
         tz: &Tz,
@@ -713,12 +786,9 @@ impl Tracker {
         now: Ms,
     ) -> Result<()> {
         let a = self.pending.clone().ok_or(TrackerError::NotFound)?;
-        let open = match repo::open_entry(&self.db)? {
-            Some(o) if o.project_id == a.project_id => o,
-            _ => {
-                self.pending = None;
-                return Err(TrackerError::NoSession);
-            }
+        let Some(target) = absence_entry(&self.db, &a)? else {
+            self.pending = None;
+            return Err(TrackerError::NoSession);
         };
         let res = match res {
             AbsenceResolution::MoveTo(pid) if pid == a.project_id => AbsenceResolution::Keep,
@@ -732,21 +802,36 @@ impl Tracker {
             if let AbsenceResolution::MoveTo(pid) = res {
                 project(db, pid)?;
             }
-            ensure_no_future_entry(db, now)?;
-            let back = a.end.min(now).max(a.start);
-            let (s, _) = record_session(db, log)?;
-            let mut s = running_session(s, &open);
-            let closed = close_entry(db, log, &open, a.start)?;
-            s.accum_ms += closed.end - closed.start;
+            let (back, session) = match target.end {
+                None => {
+                    ensure_no_future_entry(db, now)?;
+                    (
+                        a.end.min(now).max(a.start),
+                        Some(record_session(db, log)?.0),
+                    )
+                }
+                Some(end) => (a.end.min(end).max(a.start), None),
+            };
+            let closed = close_entry(db, log, &target, a.start)?;
             if let AbsenceResolution::MoveTo(pid) = res {
                 if back > a.start {
                     insert_entry(db, log, pid, a.start, Some(back))?;
                 }
             }
-            insert_entry(db, log, a.project_id, back, None)?;
-            // The app is alive at answer time, which may be long after `back`.
-            bump_heartbeat(db, now)?;
-            save_session(db, Some(&s), false)?;
+            match (target.end, session) {
+                (None, Some(s)) => {
+                    let mut s = running_session(s, &target);
+                    s.accum_ms += closed.end - closed.start;
+                    insert_entry(db, log, a.project_id, back, None)?;
+                    // The app is alive at answer time, which may be long after `back`.
+                    bump_heartbeat(db, now)?;
+                    save_session(db, Some(&s), false)?;
+                }
+                (Some(end), _) if back < end => {
+                    insert_entry(db, log, a.project_id, back, Some(end))?;
+                }
+                _ => {}
+            }
             if res == AbsenceResolution::Lunch {
                 let day = local_day(tz, a.start);
                 match repo::lunches_between(db, day, day)?.into_iter().next() {
@@ -776,9 +861,17 @@ impl Tracker {
         let Some(log) = self.undo.clone() else {
             return Ok(false);
         };
-        let mut pending = self.pending.clone();
+        let current = self.pending.clone();
+        let mut pending = current.clone();
         let tx = self.db.conn().unchecked_transaction()?;
         log.apply(&self.db, &mut pending)?;
+        // A question that arrived after the undone operation wins over the one it restores,
+        // as long as its block still exists (the older interval then simply stays counted).
+        if let Some(c) = current.filter(|c| pending.as_ref() != Some(c)) {
+            if absence_entry(&self.db, &c)?.is_some() {
+                pending = Some(c);
+            }
+        }
         if repo::open_entry(&self.db)?.is_some() {
             repo::set_meta(&self.db, META_HEARTBEAT, &now)?;
         }
@@ -828,14 +921,13 @@ impl Tracker {
         Ok(Some(last))
     }
 
-    /// Stops the clock on app exit: at the pending absence start if there is one, else at
-    /// `now`. Ends the session. Not undoable.
+    /// Stops the clock on app exit at `now` and ends the session. Not undoable. An unanswered
+    /// absence counts as Keep: time is never discounted without asking (spec 6.2/6.3).
     pub fn quit(&mut self, now: Ms) -> Result<()> {
         let open = repo::open_entry(&self.db)?;
-        let at = self.pending.as_ref().map_or(now, |a| a.start.min(now));
         self.run(false, |db, log| {
             if let Some(o) = &open {
-                close_entry(db, log, o, at)?;
+                close_entry(db, log, o, now)?;
             }
             save_session(db, None, false)
         })?;
@@ -873,7 +965,7 @@ impl Tracker {
 
     /// Deletes a project and all its entries in one transaction. Refused for the project
     /// in the session (running or paused). Undoable.
-    pub fn delete_project(&mut self, id: i64, _now: Ms) -> Result<DeletedProject> {
+    pub fn delete_project(&mut self, id: i64) -> Result<DeletedProject> {
         self.run(true, |db, log| delete_project_in(db, log, id))
     }
 
@@ -924,6 +1016,8 @@ impl Tracker {
                     };
                     save_session(db, Some(&s), false)?;
                 }
+            } else {
+                adjust_session(db, log, &old, Some(&new))?;
             }
             Ok((new, was_open))
         })?;
@@ -945,6 +1039,8 @@ impl Tracker {
                 log.push(UndoOp::RestorePending(pending));
                 record_session(db, log)?;
                 save_session(db, None, false)?;
+            } else {
+                adjust_session(db, log, &old, None)?;
             }
             Ok(was_open)
         })?;

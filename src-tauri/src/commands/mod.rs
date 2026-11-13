@@ -224,7 +224,7 @@ pub fn delete_project(
     state: State<AppState>,
     id: i64,
 ) -> Result<DeletedProject, String> {
-    mutate(&app, &state, |t, now| t.delete_project(id, now))
+    mutate(&app, &state, |t, _| t.delete_project(id))
 }
 
 #[tauri::command]
