@@ -56,4 +56,39 @@ describe("ProjectSearch", () => {
     expect(rows[0].textContent).toContain("1");
     expect(screen.queryByText("Todos os projetos")).toBeNull();
   });
+
+  it("arrows move through the options with aria-activedescendant; Enter picks the active one", () => {
+    render(<ProjectSearch query="" onQueryChange={() => {}} onCreate={() => {}} onAll={() => {}} />);
+    const input = screen.getByRole("combobox", { name: "Trocar para… ou criar projeto" });
+    expect(input.getAttribute("aria-activedescendant")).toBeNull();
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    const id = input.getAttribute("aria-activedescendant");
+    expect(id).toBeTruthy();
+    expect(document.getElementById(id!)?.textContent).toContain("Migração SAP");
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    expect(document.getElementById(input.getAttribute("aria-activedescendant")!)?.textContent).toContain("App Mobile");
+    fireEvent.keyDown(input, { key: "ArrowUp" });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(api.switchProject).toHaveBeenCalledWith(1);
+  });
+
+  it("with no options, arrows do nothing and Enter keeps the default (create)", () => {
+    const onCreate = vi.fn();
+    render(<ProjectSearch query="zzz" onQueryChange={() => {}} onCreate={onCreate} onAll={() => {}} />);
+    const input = screen.getByRole("combobox");
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    expect(input.getAttribute("aria-activedescendant")).toBeNull();
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(onCreate).toHaveBeenCalledWith("zzz");
+  });
+
+  it("with a query, arrows walk the matches", () => {
+    render(<ProjectSearch query="a" onQueryChange={() => {}} onCreate={() => {}} onAll={() => {}} />);
+    const input = screen.getByRole("combobox");
+    for (let i = 0; i < 3; i++) fireEvent.keyDown(input, { key: "ArrowDown" });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(api.switchProject).toHaveBeenCalledWith(3);
+  });
 });

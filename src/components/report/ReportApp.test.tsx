@@ -85,6 +85,42 @@ describe("ReportApp", () => {
     expect(screen.getByText("5,5 copiado")).toBeTruthy();
   });
 
+  it("number cells are keyboard buttons named after the value they copy", async () => {
+    await mount();
+    const cells = screen.getAllByRole("button", { name: "Copiar 5,5" });
+    expect(cells.length).toBeGreaterThan(0);
+    for (const c of cells) expect(c.tagName).toBe("BUTTON");
+    // The overtime row copies too.
+    fireEvent.click(screen.getAllByRole("button", { name: "Copiar 1" })[0]);
+    await flush();
+    expect(writeText).toHaveBeenCalledWith("1");
+  });
+
+  it("shows an empty (or legacy) client as the translated no-client label", async () => {
+    vi.mocked(api.getWeek).mockImplementation(async (_w, grouping) =>
+      week({
+        grouping,
+        rows: [
+          { kind: "clientHeader", label: "", color: null, projectCount: 1, cells: [], total: { totalMs: 0, extraMs: 0 } },
+          {
+            kind: "data",
+            label: grouping === "client" ? "No client" : "Solo",
+            color: null,
+            projectCount: 1,
+            cells: Array(7).fill({ totalMs: H, extraMs: 0 }),
+            total: { totalMs: 7 * H, extraMs: 0 },
+          },
+        ],
+      }),
+    );
+    await mount();
+    expect(screen.getByText("Sem cliente")).toBeTruthy();
+    expect(screen.getByText("Solo")).toBeTruthy();
+    fireEvent.click(screen.getByRole("radio", { name: "Por cliente" }));
+    await flush();
+    expect(screen.getAllByText("Sem cliente")).toHaveLength(2);
+  });
+
   it("clicking a day header opens that day", async () => {
     await mount();
     fireEvent.click(screen.getByRole("button", { name: /Qua/ }));

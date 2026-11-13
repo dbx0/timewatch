@@ -1,5 +1,6 @@
-import type { Ref } from "react";
+import { useEffect, useId, useState, type Ref } from "react";
 import { useT } from "../../i18n";
+import { clientLabel } from "../../lib/client";
 import { dur } from "../../lib/format";
 import type { Project } from "../../lib/types";
 import { liveDelta, useTracker } from "../../stores/tracker";
@@ -18,7 +19,7 @@ interface Props {
 
 export function matchProjects(projects: Project[], query: string): Project[] {
   const q = query.trim().toLowerCase();
-  return projects.filter((p) => !p.archived && `${p.name} ${p.client}`.toLowerCase().includes(q));
+  return projects.filter((p) => !p.archived && `${p.name} ${clientLabel(p.client)}`.toLowerCase().includes(q));
 }
 
 /** Today's time per project id (recents only), with the running project kept live. */
@@ -32,23 +33,62 @@ export function useTodayById(): (id: number) => number {
   };
 }
 
-export function ProjectRow({ p, today, badge, current, onPick }: {
+/**
+ * Arrow-key navigation over a list of options (a combobox input or a focusable listbox):
+ * the active option is announced with aria-activedescendant and scrolled into view.
+ * `min` -1 lets ArrowUp go back to "no option" (the search text itself).
+ */
+export function useListNav(count: number, { min = -1, reset }: { min?: -1 | 0; reset?: unknown } = {}) {
+  const base = useId();
+  const [active, setActive] = useState<number>(min);
+  useEffect(() => setActive(min), [reset, min]);
+  const idx = active < count ? active : min;
+  const idOf = (i: number) => `${base}-opt-${i}`;
+  const activeId = idx >= 0 ? idOf(idx) : undefined;
+  useEffect(() => {
+    if (activeId) document.getElementById(activeId)?.scrollIntoView?.({ block: "nearest" });
+  }, [activeId]);
+  /** Handles the arrows/Home/End; true when the key was consumed. */
+  const onKey = (e: React.KeyboardEvent): boolean => {
+    if (!count) return false;
+    let next: number | null = null;
+    if (e.key === "ArrowDown") next = Math.min(count - 1, idx + 1);
+    else if (e.key === "ArrowUp") next = Math.max(min, idx - 1);
+    else if (e.key === "Home" && min === 0) next = 0;
+    else if (e.key === "End" && min === 0) next = count - 1;
+    if (next === null) return false;
+    e.preventDefault();
+    setActive(next);
+    return true;
+  };
+  return { active: idx, activeId, idOf, onKey };
+}
+
+export function ProjectRow({ p, today, badge, current, onPick, id, active = false }: {
   p: Project;
   today: number;
   badge?: number | null;
   current: boolean;
   onPick: (p: Project) => void;
+  id?: string;
+  /** Keyboard highlight (aria-activedescendant). */
+  active?: boolean;
 }) {
+  const L = useT();
   return (
     <div
+      id={id}
       role="option"
       aria-selected={current}
+      data-active={active || undefined}
       onClick={() => onPick(p)}
-      className={`flex cursor-pointer items-center gap-2.5 rounded-[10px] px-2.5 py-2 ${current ? "bg-[#17213a]" : "hover:bg-raise"}`}
+      className={`flex cursor-pointer items-center gap-2.5 rounded-[10px] px-2.5 py-2 ${current ? "bg-[#17213a]" : "hover:bg-raise"} ${
+        active ? "ring-1 ring-inset ring-accent2/70" : ""
+      }`}
     >
       <Dot color={p.color} />
       <span className="min-w-0 truncate">{p.name}</span>
-      <span className="truncate text-xs text-dim">{p.client}</span>
+      <span className="truncate text-xs text-dim">{clientLabel(p.client, L)}</span>
       <span className="ml-auto flex flex-none items-center gap-2 text-xs text-mute">
         {today > 0 ? dur(today) : ""}
         {badge ? <span className="rounded-[5px] bg-raise2 px-1.5 py-px font-mono text-[11px] text-mute">{badge}</span> : null}
@@ -63,11 +103,15 @@ export function ProjectSearch({ query, onQueryChange, onCreate, onAll, onSwitche
   const s = useT().notch;
   const snapshot = useTracker((st) => st.snapshot);
   const todayOf = useTodayById();
+  const raw = query.trim();
+  const matches = snapshot && raw ? matchProjects(snapshot.projects, raw) : [];
+  const shown = raw ? matches : (snapshot?.recents.map((r) => r.project) ?? []);
+  const nav = useListNav(shown.length, { reset: raw });
+  const listId = useId();
   if (!snapshot) return null;
   const current = snapshot.sessionProject?.id ?? null;
   const active = snapshot.projects.filter((p) => !p.archived);
-  const raw = query.trim();
-  const matches = raw ? matchProjects(snapshot.projects, raw) : [];
+  const badgeOf = (id: number) => (raw ? null : snapshot.recents.find((r) => r.project.id === id)?.shortcut);
 
   const pick = (p: Project) => {
     void switchTo(p);
@@ -82,6 +126,12 @@ export function ProjectSearch({ query, onQueryChange, onCreate, onAll, onSwitche
           ref={inputRef}
           value={query}
           placeholder={s.search}
+          role="combobox"
+          aria-label={s.search}
+          aria-expanded={shown.length > 0}
+          aria-controls={listId}
+          aria-autocomplete="list"
+          aria-activedescendant={nav.activeId}
           autoComplete="off"
           spellCheck={false}
           onChange={(e) => onQueryChange(e.target.value)}
@@ -92,7 +142,15 @@ export function ProjectSearch({ query, onQueryChange, onCreate, onAll, onSwitche
             }
           }}
           onKeyDown={(e) => {
-            if (e.key !== "Enter" || !raw) return;
+            if (nav.onKey(e)) return;
+            if (e.key !== "Enter") return;
+            const chosen = shown[nav.active];
+            if (chosen) {
+              e.preventDefault();
+              pick(chosen);
+              return;
+            }
+            if (!raw) return;
             e.preventDefault();
             if (matches.length) pick(matches[0]);
             else onCreate(raw);
@@ -100,38 +158,32 @@ export function ProjectSearch({ query, onQueryChange, onCreate, onAll, onSwitche
           className="flex-1 border-0 bg-transparent py-[9px] text-text outline-none placeholder:text-dim"
         />
       </div>
-      <div role="listbox" className="mt-1.5 max-h-[260px] overflow-auto">
-        {!raw ? (
-          <>
-            {snapshot.recents.length === 0 && <div className="px-2.5 py-3.5 text-[13px] text-mute">{s.empty}</div>}
-            {snapshot.recents.map((r) => (
-              <ProjectRow
-                key={r.project.id}
-                p={r.project}
-                today={todayOf(r.project.id)}
-                badge={r.shortcut}
-                current={r.project.id === current}
-                onPick={pick}
-              />
-            ))}
-            {active.length > snapshot.recents.length && (
-              <button type="button" className={subRow} onClick={onAll}>
-                {s.allProjects}
-                <span className="ml-auto text-xs">{active.length}</span>
-              </button>
-            )}
-          </>
-        ) : (
-          <>
-            {matches.map((p) => (
-              <ProjectRow key={p.id} p={p} today={todayOf(p.id)} current={p.id === current} onPick={pick} />
-            ))}
-            <button type="button" className={subRow} onClick={() => onCreate(raw)}>
-              {s.createRow(raw)}
-            </button>
-          </>
-        )}
+      <div id={listId} role="listbox" aria-label={s.search} className="mt-1.5 max-h-[260px] overflow-auto">
+        {!raw && snapshot.recents.length === 0 && <div className="px-2.5 py-3.5 text-[13px] text-mute">{s.empty}</div>}
+        {shown.map((p, i) => (
+          <ProjectRow
+            key={p.id}
+            id={nav.idOf(i)}
+            active={i === nav.active}
+            p={p}
+            today={todayOf(p.id)}
+            badge={badgeOf(p.id)}
+            current={p.id === current}
+            onPick={pick}
+          />
+        ))}
       </div>
+      {!raw && active.length > snapshot.recents.length && (
+        <button type="button" className={subRow} onClick={onAll}>
+          {s.allProjects}
+          <span className="ml-auto text-xs">{active.length}</span>
+        </button>
+      )}
+      {raw && (
+        <button type="button" className={subRow} onClick={() => onCreate(raw)}>
+          {s.createRow(raw)}
+        </button>
+      )}
     </>
   );
 }

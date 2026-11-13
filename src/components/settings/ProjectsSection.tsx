@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { dec } from "../../lib/format";
-import { useT } from "../../i18n";
+import { useLang, useT } from "../../i18n";
+import { clientKey, clientLabel, sortedClients } from "../../lib/client";
 import * as api from "../../lib/api";
 import type { Project, ProjectUsage } from "../../lib/types";
 import { toast } from "../../stores/toast";
@@ -102,6 +103,7 @@ export function ProjectsSection({
 }) {
   const L = useT();
   const t = L.settings;
+  const lang = useLang((s) => s.lang);
   const [confirm, setConfirm] = useState<{ id: number; usage: ProjectUsage } | null>(null);
   const [client, setClient] = useState("");
   const [name, setName] = useState("");
@@ -138,7 +140,7 @@ export function ProjectsSection({
       return;
     }
     try {
-      await api.createProject(n, client.trim() || t.noClient, PROJECT_PALETTE[projects.length % PROJECT_PALETTE.length]);
+      await api.createProject(n, client.trim(), PROJECT_PALETTE[projects.length % PROJECT_PALETTE.length]);
       setName("");
       reload();
     } catch (e) {
@@ -149,7 +151,7 @@ export function ProjectsSection({
     if (e.key === "Enter") void add();
   };
 
-  const clients = [...new Set(projects.map((p) => p.client))].sort((a, b) => a.localeCompare(b, "pt-BR"));
+  const clients = sortedClients(projects.map((p) => p.client), lang);
 
   return (
     <>
@@ -161,10 +163,10 @@ export function ProjectsSection({
       </div>
       {projects.length === 0 && <div className="py-6 text-center text-dim">{t.noProjects}</div>}
       {clients.map((c) => (
-        <div key={c}>
-          <div className="ml-0.5 mt-3 text-[11px] uppercase tracking-wide text-dim">{c}</div>
+        <div key={c || "\u0000"}>
+          <div className="ml-0.5 mt-3 text-[11px] uppercase tracking-wide text-dim">{clientLabel(c, L)}</div>
           {projects
-            .filter((p) => p.client === c)
+            .filter((p) => clientKey(p.client) === c)
             .map((p) => (
               <div key={p.id} className="border-b border-[#1d1d24]">
                 <div className={`flex items-center justify-between py-2.5 ${p.archived ? "opacity-50" : ""}`}>

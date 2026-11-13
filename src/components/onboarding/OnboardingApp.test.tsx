@@ -129,6 +129,16 @@ describe("OnboardingApp", () => {
     addProject("", "Solo");
     for (let i = 0; i < 4; i++) click("Continuar");
     click("Nenhum agora, só quero explorar");
-    expect(api.finishOnboarding).toHaveBeenCalledWith([{ client: "Sem cliente", name: "Solo" }], null);
+    expect(api.finishOnboarding).toHaveBeenCalledWith([{ client: "", name: "Solo" }], null);
+  });
+
+  it("a project without client is saved with an empty client and shown as Sem cliente", async () => {
+    await toProjects();
+    addProject("", "Solo");
+    expect(screen.getByText("Sem cliente")).toBeTruthy();
+    // No chip for the empty client.
+    expect(screen.queryByRole("button", { name: "Sem cliente" })).toBeNull();
+    for (let i = 0; i < 4; i++) click("Continuar");
+    expect(screen.getByText("Sem cliente")).toBeTruthy();
   });
 });

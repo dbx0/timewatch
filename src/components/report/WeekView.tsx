@@ -4,6 +4,7 @@ import * as api from "../../lib/api";
 import { addDays, errMsg, mondayOf, toIso } from "../../lib/dates";
 import { dayLabel, dec, weekdayShort } from "../../lib/format";
 import { useT, getT } from "../../i18n";
+import { clientLabel } from "../../lib/client";
 import type { Cell, Grouping, IsoDate, WeekReport } from "../../lib/types";
 import { toast } from "../../stores/toast";
 import { Button } from "../ui/Button";
@@ -60,14 +61,11 @@ export function WeekView({ weekStart, grouping, today, reloadKey, onWeekChange, 
       );
     }
     return (
-      <td
-        key={i}
-        title={opts.extra ? undefined : t.copyHint}
-        onClick={() => void copy(dec(ms))}
-        className={`h-11 cursor-copy border-t border-[#1d1d24] text-center tabular-nums hover:bg-[#1a1f30] ${isToday ? "bg-accent/5" : ""} ${opts.extra ? "text-accent2" : ""}`}
-      >
-        {dec(ms)}
-        {!opts.extra && cell.extraMs > 0 && <span className="block text-[11px] leading-none text-accent2">{t.extra(dec(cell.extraMs))}</span>}
+      <td key={i} className={`h-11 border-t border-[#1d1d24] p-0 text-center tabular-nums ${isToday ? "bg-accent/5" : ""} ${opts.extra ? "text-accent2" : ""}`}>
+        <CopyButton value={dec(ms)} hint={!opts.extra}>
+          {dec(ms)}
+          {!opts.extra && cell.extraMs > 0 && <span className="block text-[11px] leading-none text-accent2">{t.extra(dec(cell.extraMs))}</span>}
+        </CopyButton>
       </td>
     );
   };
@@ -137,7 +135,7 @@ export function WeekView({ weekStart, grouping, today, reloadKey, onWeekChange, 
                   r.kind === "clientHeader" ? (
                     <tr key={ri}>
                       <td colSpan={9} className="h-[34px] pb-1 align-bottom text-[11px] uppercase tracking-[.06em] text-dim">
-                        {r.label}
+                        {clientLabel(r.label)}
                       </td>
                     </tr>
                   ) : (
@@ -146,7 +144,7 @@ export function WeekView({ weekStart, grouping, today, reloadKey, onWeekChange, 
                         <span className="flex items-center gap-2.5">
                           {r.color && <i className="inline-block h-2 w-2 flex-none rounded-full" style={{ background: r.color }} />}
                           <span>
-                            {r.label}
+                            {grouping === "client" ? clientLabel(r.label) : r.label}
                             {grouping === "client" && (
                               <span className="ml-2 text-xs text-dim">{t.projects(r.projectCount)}</span>
                             )}
@@ -183,13 +181,27 @@ function TotalCell({ cell, top }: { cell: Cell; top?: boolean }) {
   const border = top ? "border-[#34343e]" : "border-[#1d1d24]";
   if (!cell.totalMs) return <td className={`h-11 border-t ${border} text-center text-dim`}>·</td>;
   return (
-    <td
-      title={t.copyHint}
-      onClick={() => void copy(dec(cell.totalMs))}
-      className={`h-11 cursor-copy border-t ${border} text-center font-semibold tabular-nums hover:bg-[#1a1f30]`}
-    >
-      {dec(cell.totalMs)}
-      {cell.extraMs > 0 && <span className="block text-[11px] font-normal leading-none text-accent2">{t.extra(dec(cell.extraMs))}</span>}
+    <td className={`h-11 border-t ${border} p-0 text-center font-semibold tabular-nums`}>
+      <CopyButton value={dec(cell.totalMs)}>
+        {dec(cell.totalMs)}
+        {cell.extraMs > 0 && <span className="block text-[11px] font-normal leading-none text-accent2">{t.extra(dec(cell.extraMs))}</span>}
+      </CopyButton>
     </td>
+  );
+}
+
+/** A number in the grid: a real button (Tab, Enter/Space) that copies its value. */
+function CopyButton({ value, hint = true, children }: { value: string; hint?: boolean; children: React.ReactNode }) {
+  const t = useT().report;
+  return (
+    <button
+      type="button"
+      title={hint ? t.copyHint : undefined}
+      aria-label={t.copyValue(value)}
+      onClick={() => void copy(value)}
+      className="flex h-11 w-full cursor-copy flex-col items-center justify-center rounded-md tabular-nums outline-none hover:bg-[#1a1f30] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent2"
+    >
+      {children}
+    </button>
   );
 }

@@ -213,6 +213,7 @@ export const es: Strings = {
     projects: (n: number) => (n === 1 ? "1 proyecto" : `${n} proyectos`),
     extra: (v: string) => `+${v} extra`,
     copyHint: "Haz clic para copiar",
+    copyValue: (v: string) => `Copiar ${v}`,
     copied: (v: string) => `${v} copiado`,
     copyFailed: "No se pudo copiar",
     emptyWeek: "Nada registrado esta semana.",

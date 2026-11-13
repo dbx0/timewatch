@@ -48,7 +48,7 @@ describe("i18n tables", () => {
         "settings.clientPh", "settings.holidays", "report.holiday", "report.holidayParen", "onboarding.next", "onboarding.setup", "onboarding.clients", "onboarding.lunch30",
         "onboarding.lunch60", "onboarding.lunch90", "report.prevWeek", "report.thisWeek", "report.byClient",
         "report.export", "report.exportCsv", "report.exportHtml", "report.exportFileName", "report.exported",
-        "report.expected", "report.total", "report.jornada", "report.extra", "report.copied",
+        "report.expected", "report.total", "report.jornada", "report.extra", "report.copied", "report.copyValue",
         "report.backToWeek", "report.editNote", "report.cancelNote", "report.weekdaysLong[5]",
         "report.weekdaysLong[6]", "dayMonth", "weekdaysShort[5]", "weekdaysShort[6]", "weekdaysInitial[5]",
         "weekdaysInitial[6]", "monthsShort[2]", "monthsShort[3]", "monthsShort[5]", "monthsShort[6]",

@@ -191,6 +191,36 @@ describe("SettingsApp", () => {
     expect(api.createProject).toHaveBeenCalledWith("Novo", "Acme", expect.stringMatching(/^#/));
   });
 
+  it("adds a project without client as an empty client", async () => {
+    vi.mocked(api.createProject).mockResolvedValue({ ...projects[0], id: 9 });
+    await mount();
+    nav("Projetos");
+    const name = screen.getByPlaceholderText("Projeto");
+    fireEvent.change(name, { target: { value: "Solo" } });
+    fireEvent.keyDown(name, { key: "Enter" });
+    expect(api.createProject).toHaveBeenCalledWith("Solo", "", expect.stringMatching(/^#/));
+  });
+
+  it("groups empty and legacy no-client projects under one translated header, last", async () => {
+    vi.mocked(api.getSnapshot).mockResolvedValue(
+      snapshot({
+        projects: [
+          ...projects,
+          { id: 7, name: "Solo A", client: "", color: "#fff", archived: false },
+          { id: 8, name: "Solo B", client: "Sem cliente", color: "#fff", archived: false },
+          { id: 9, name: "Solo C", client: "No client", color: "#fff", archived: false },
+        ],
+      }),
+    );
+    await mount();
+    nav("Projetos");
+    act(() => setLang("en"));
+    const headers = [...document.querySelectorAll("main .uppercase")].map((e) => e.textContent);
+    expect(headers).toEqual(["Acme", "Globex", "No client"]);
+    act(() => setLang("pt-BR"));
+    expect(screen.getAllByText("Sem cliente")).toHaveLength(1);
+  });
+
   it("renames a project inline", async () => {
     await mount();
     nav("Projetos");

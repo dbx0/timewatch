@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { useT } from "../../i18n";
+import { useLang, useT } from "../../i18n";
+import { clientLabel, sortedClients } from "../../lib/client";
 import { toast } from "../../stores/toast";
 import { useTracker } from "../../stores/tracker";
 import { Button } from "../ui/Button";
@@ -24,9 +25,11 @@ export function CreateProject({ initialName, onBack, onDone }: {
   onBack: () => void;
   onDone: () => void;
 }) {
-  const s = useT().notch;
+  const L = useT();
+  const s = L.notch;
+  const lang = useLang((st) => st.lang);
   const projects = useTracker((st) => st.snapshot?.projects ?? []);
-  const clients = [...new Set(projects.map((p) => p.client))].sort((a, b) => a.localeCompare(b, "pt-BR"));
+  const clients = sortedClients(projects.map((p) => p.client), lang);
   const [name, setName] = useState(initialName);
   const [client, setClient] = useState<string | null>(null);
   const [newClient, setNewClient] = useState("");
@@ -47,7 +50,7 @@ export function CreateProject({ initialName, onBack, onDone }: {
     }
     if (busy) return;
     setBusy(true);
-    const ok = await createAndStart(n, newClient.trim() || client || s.noClient, color);
+    const ok = await createAndStart(n, newClient.trim() || client || "", color);
     setBusy(false);
     if (ok) onDone();
   };
@@ -76,12 +79,12 @@ export function CreateProject({ initialName, onBack, onDone }: {
           {clients.map((c) => {
             const on = client === c && !newClient.trim();
             return (
-              <button key={c} type="button" aria-pressed={on}
+              <button key={c || "\u0000"} type="button" aria-pressed={on}
                 onClick={() => { setClient(c); setNewClient(""); }}
                 className={`cursor-pointer rounded-full px-2.5 py-[3px] text-xs outline-none focus-visible:ring-2 focus-visible:ring-accent2 ${
                   on ? "bg-accent text-white" : "bg-raise2 text-text hover:bg-[#2e2e38]"
                 }`}>
-                {c}
+                {clientLabel(c, L)}
               </button>
             );
           })}

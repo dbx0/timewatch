@@ -211,6 +211,7 @@ export const ptBR = {
     projects: (n: number) => (n === 1 ? "1 projeto" : `${n} projetos`),
     extra: (v: string) => `+${v} extra`,
     copyHint: "Clique pra copiar",
+    copyValue: (v: string) => `Copiar ${v}`,
     copied: (v: string) => `${v} copiado`,
     copyFailed: "Não deu pra copiar",
     emptyWeek: "Nada registrado nesta semana.",

@@ -1,6 +1,7 @@
 import { useEffect, useState, type Ref } from "react";
 import { useT } from "../../i18n";
 import { openWindow } from "../../lib/api";
+import { clientLabel } from "../../lib/client";
 import { clock } from "../../lib/format";
 import type { WindowKind } from "../../lib/types";
 import { liveSessionMs, liveTodayMs, useTracker } from "../../stores/tracker";
@@ -22,7 +23,8 @@ const round =
   "flex h-11 w-11 cursor-pointer items-center justify-center rounded-full outline-none transition active:scale-[.92] focus-visible:ring-2 focus-visible:ring-accent2";
 
 export function Panel({ onCreate, onAll, onClose, inputRef }: Props) {
-  const s = useT().notch;
+  const L = useT();
+  const s = L.notch;
   const snapshot = useTracker((st) => st.snapshot);
   const sessionMs = useTracker(liveSessionMs);
   const todayMs = useTracker(liveTodayMs);
@@ -63,7 +65,7 @@ export function Panel({ onCreate, onAll, onClose, inputRef }: Props) {
               <>
                 <Dot color={p.color} />
                 <span className="truncate">
-                  {p.client} · <span className="text-text">{p.name}</span>
+                  {clientLabel(p.client, L)} · <span className="text-text">{p.name}</span>
                 </span>
               </>
             ) : (

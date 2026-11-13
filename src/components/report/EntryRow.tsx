@@ -1,6 +1,7 @@
 import { addDays, atLocal } from "../../lib/dates";
 import { dur, hm } from "../../lib/format";
 import { useT } from "../../i18n";
+import { clientLabel } from "../../lib/client";
 import type { IsoDate, Project, Seg } from "../../lib/types";
 import { useState } from "react";
 import { Dropdown, type DropdownOption } from "../ui/Dropdown";
@@ -18,12 +19,13 @@ interface Props {
 }
 
 export function EntryRow({ day, seg, projects, onUpdate, onDelete, onNote }: Props) {
-  const t = useT().report;
+  const L = useT();
+  const t = L.report;
   const [noteAnchor, setNoteAnchor] = useState<HTMLButtonElement | null>(null);
   const [editing, setEditing] = useState(false);
   const options: DropdownOption<number>[] = projects
     .filter((p) => !p.archived || p.id === seg.projectId)
-    .map((p) => ({ value: p.id, label: p.name, color: p.color, group: p.client }));
+    .map((p) => ({ value: p.id, label: p.name, color: p.color, group: clientLabel(p.client, L) }));
   const clippedStart = seg.start === atLocal(day, "00:00");
   const clippedEnd = !seg.running && seg.end === atLocal(addDays(day, 1), "00:00");
   const change = (field: "start" | "end", current: string) => (v: string) => {
@@ -63,7 +65,7 @@ export function EntryRow({ day, seg, projects, onUpdate, onDelete, onNote }: Pro
             <>
               {o?.color && <i className="inline-block h-2 w-2 flex-none rounded-full" style={{ background: o.color }} />}
               <span>{o?.label}</span>
-              {proj?.client && <span className="text-xs text-dim">{proj.client}</span>}
+              {proj && <span className="text-xs text-dim">{clientLabel(proj.client, L)}</span>}
             </>
           )}
         />

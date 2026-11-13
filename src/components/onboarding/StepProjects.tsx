@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import { useT } from "../../i18n";
+import { clientLabel, isNoClient } from "../../lib/client";
 import { PROJECT_PALETTE } from "../ui/ColorPicker";
 import { Button } from "../ui/Button";
 import { textField } from "../ui/field";
@@ -22,7 +23,7 @@ export function StepProjects({ projects, onChange }: Props) {
   const [client, setClient] = useState("");
   const [name, setName] = useState("");
   const nameRef = useRef<HTMLInputElement>(null);
-  const clients = [...new Set(projects.map((p) => p.client).filter(Boolean))];
+  const clients = [...new Set(projects.map((p) => p.client).filter((c) => !isNoClient(c)))];
 
   const add = () => {
     const n = name.trim();
@@ -30,7 +31,7 @@ export function StepProjects({ projects, onChange }: Props) {
       nameRef.current?.focus();
       return;
     }
-    onChange([...projects, { name: n, client: client.trim() || L.settings.noClient }]);
+    onChange([...projects, { name: n, client: client.trim() }]);
     setName("");
     nameRef.current?.focus();
   };
@@ -90,7 +91,7 @@ export function StepProjects({ projects, onChange }: Props) {
           <div key={i} className="mb-1.5 flex items-center gap-2.5 rounded-[10px] bg-raise px-2.5 py-2">
             <span className="h-2 w-2 flex-none rounded-full" style={{ background: PROJECT_PALETTE[i % PROJECT_PALETTE.length] }} />
             <span className="min-w-0 truncate">{p.name}</span>
-            <span className="text-xs text-dim">{p.client}</span>
+            <span className="text-xs text-dim">{clientLabel(p.client, L)}</span>
             <button
               type="button"
               aria-label={t.remove(p.name)}
