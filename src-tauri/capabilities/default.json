@@ -1,8 +1,8 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for the app windows",
-  "windows": ["*"],
+  "description": "Normal app windows (report, settings, onboarding): frame controls, save dialog, clipboard.",
+  "windows": ["report", "settings", "onboarding"],
   "permissions": [
     "core:default",
     "core:window:allow-start-dragging",
