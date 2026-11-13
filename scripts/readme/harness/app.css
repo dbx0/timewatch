@@ -1,0 +1,3 @@
+/* The harness root is scripts/readme, so point Tailwind's class scan at the app sources. */
+@import "../../../src/styles/index.css";
+@source "../../../src";
