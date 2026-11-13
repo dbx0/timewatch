@@ -2,15 +2,13 @@
 
 /// Max drift (logical px) from the anchor sample that still counts as resting.
 pub const REST_RADIUS: f64 = 4.0;
-/// Minimum stillness, ms.
+/// Minimum stillness, ms. The first anchor is the entry sample, so this also bounds the time
+/// spent inside the rect (no separate "minimum inside" rule is needed).
 pub const REST_STILL_MS: u64 = 180;
-/// Minimum time inside the hit rect, ms.
-pub const REST_INSIDE_MS: u64 = 120;
 
 /// Fed one sample per poll while the cursor is inside the rect. Fires at most once per session.
 #[derive(Debug, Default)]
 pub struct RestDetector {
-    entered_at: Option<u64>,
     anchor: Option<(f64, f64, u64)>,
     fired: bool,
 }
@@ -30,7 +28,6 @@ impl RestDetector {
         if self.fired {
             return false;
         }
-        let entered = *self.entered_at.get_or_insert(t_ms);
         let at = match self.anchor {
             Some(a) if (x - a.0).hypot(y - a.1) <= REST_RADIUS => a.2,
             _ => {
@@ -38,7 +35,7 @@ impl RestDetector {
                 t_ms
             }
         };
-        if t_ms - at >= REST_STILL_MS && t_ms - entered >= REST_INSIDE_MS {
+        if t_ms - at >= REST_STILL_MS {
             self.fired = true;
             return true;
         }
@@ -103,6 +100,34 @@ mod tests {
         for i in 0..4u64 {
             assert!(!d.sample(10.0, 5.0, i * STEP));
         }
+    }
+
+    /// The anchor is fixed (not dragged along), so a slow creep that stays under the radius per
+    /// sample but drifts past it overall keeps re-anchoring and never counts as resting.
+    #[test]
+    fn slow_creep_never_rests() {
+        let mut d = RestDetector::new();
+        for i in 0..60u64 {
+            // 3 px per 33 ms sample (~90 px/s): each step < REST_RADIUS, 180 px in total.
+            assert!(
+                !d.sample(i as f64 * 3.0, 5.0, i * STEP),
+                "fired at sample {i}"
+            );
+        }
+        let mut d = RestDetector::new();
+        for i in 0..60u64 {
+            // 1 px per sample (~30 px/s) diagonally still leaves the radius before 180 ms.
+            let p = i as f64;
+            assert!(!d.sample(p, p * 0.5, i * STEP), "fired at sample {i}");
+        }
+    }
+
+    /// Sub-pixel drift (hand tremor, < REST_RADIUS within REST_STILL_MS) is resting.
+    #[test]
+    fn imperceptible_creep_rests() {
+        let mut d = RestDetector::new();
+        let fired = (0..20u64).find(|&i| d.sample(100.0 + i as f64 * 0.5, 5.0, i * STEP));
+        assert_eq!(fired, Some(6), "rests after ~REST_STILL_MS");
     }
 
     #[test]
