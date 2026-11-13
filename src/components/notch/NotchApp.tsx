@@ -22,8 +22,14 @@ export const COACH_MS = 7000;
 
 /** Unpinned panel closes this long after the cursor leaves. */
 export const CLOSE_DELAY = 450;
-/** Strip mode: the bar grows into the pill first; the panel opens if the cursor stays. */
-export const STRIP_OPEN_DELAY = 300;
+/**
+ * Hover must rest on the pill this long before the panel opens, so passing the cursor over the
+ * top of the screen never pops it open. A click on the pill opens it right away. In strip mode the
+ * bar grows into the pill immediately and the panel follows after this delay.
+ */
+export const HOVER_OPEN_DELAY = 700;
+/** @deprecated kept for tests/imports; strip mode now uses HOVER_OPEN_DELAY. */
+export const STRIP_OPEN_DELAY = HOVER_OPEN_DELAY;
 /** With an undo toast under the collapsed pill, wait this long to see if the pointer is on the toast. */
 export const TOAST_HOVER_GRACE = 80;
 const PANEL_W = 440;
@@ -118,9 +124,10 @@ export function NotchApp() {
     (onPill: boolean) => {
       const strip = configRef.current.mode === "strip";
       if (strip) setGrown(true);
-      const delay = strip ? STRIP_OPEN_DELAY : toastUndoRef.current && !onPill ? TOAST_HOVER_GRACE : 0;
+      // The toast grace is shorter than the hover delay, so the rest check below covers both.
+      void onPill;
+      const delay = Math.max(HOVER_OPEN_DELAY, TOAST_HOVER_GRACE);
       clearTimeout(growTimer.current);
-      if (delay === 0) return openPanel(false);
       growTimer.current = setTimeout(() => {
         if (hoveringRef.current && !overToastRef.current) openPanel(false);
       }, delay);

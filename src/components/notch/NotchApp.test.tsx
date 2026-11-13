@@ -7,7 +7,7 @@ import * as api from "../../lib/api";
 import type { OverlayConfig, TrackerSnapshot } from "../../lib/types";
 import { useTracker } from "../../stores/tracker";
 import { snapshot } from "./fixtures";
-import { NotchApp } from "./NotchApp";
+import { HOVER_OPEN_DELAY, NotchApp } from "./NotchApp";
 import { resetFocusRequests } from "./keyboard";
 import { toast, useToasts } from "../../stores/toast";
 import { setLang } from "../../i18n";
@@ -65,7 +65,7 @@ describe("NotchApp", () => {
     act(() => void vi.advanceTimersByTime(200));
     expect(document.querySelector("[data-coach]")).toBeNull();
     act(() => coach());
-    act(() => hover(true));
+    hoverIn();
     expect(document.querySelector("[data-coach]")).toBeNull();
   });
 
@@ -77,13 +77,13 @@ describe("NotchApp", () => {
 
   it("opens on hover and closes 450 ms after the hover ends", async () => {
     await mount();
-    act(() => hover(true));
+    hoverIn();
     expect(state()).toBe("open");
     expect(api.overlaySetExpanded).toHaveBeenLastCalledWith(true);
     act(() => hover(false));
     act(() => void vi.advanceTimersByTime(440));
     expect(state()).toBe("open");
-    act(() => hover(true));
+    hoverIn();
     act(() => hover(false));
     act(() => void vi.advanceTimersByTime(460));
     expect(state()).toBe("closed");
@@ -92,7 +92,7 @@ describe("NotchApp", () => {
 
   it("a plain click (project row) does not pin: hover-out still closes", async () => {
     await mount();
-    act(() => hover(true));
+    hoverIn();
     const row = screen.getByText("Migração SAP");
     fireEvent.pointerDown(row);
     await act(async () => fireEvent.click(row));
@@ -105,7 +105,7 @@ describe("NotchApp", () => {
 
   it("focusing the search pins and takes keyboard focus; Esc closes", async () => {
     await mount();
-    act(() => hover(true));
+    hoverIn();
     act(() => screen.getByPlaceholderText("Trocar para… ou criar projeto").focus());
     expect(api.overlayFocus).toHaveBeenCalledTimes(1);
     act(() => hover(false));
@@ -117,7 +117,7 @@ describe("NotchApp", () => {
 
   it("blur closes a pinned panel but not a hover-opened one", async () => {
     await mount();
-    act(() => hover(true));
+    hoverIn();
     fireEvent.blur(window);
     expect(state()).toBe("open");
     act(() => expanded(true));
@@ -188,6 +188,19 @@ describe("NotchApp", () => {
     expect(state()).toBe("open");
   });
 
+  it("waits for the hover to rest before opening; leaving early cancels", async () => {
+    await mount();
+    act(() => hover(true));
+    act(() => void vi.advanceTimersByTime(HOVER_OPEN_DELAY - 50));
+    expect(state()).toBe("closed");
+    act(() => hover(false));
+    act(() => void vi.advanceTimersByTime(1000));
+    expect(state()).toBe("closed");
+    act(() => hover(true));
+    act(() => void vi.advanceTimersByTime(HOVER_OPEN_DELAY));
+    expect(state()).toBe("open");
+  });
+
   it("strip mode: thin bar grows to the pill on hover, then opens", async () => {
     await mount(strip);
     const bar = document.querySelector("[data-pill=strip]") as HTMLElement;
@@ -196,7 +209,7 @@ describe("NotchApp", () => {
     expect(document.querySelector("[data-pill=strip]")).toBeNull();
     expect(screen.getByText("Portal B2B")).toBeTruthy();
     expect(state()).toBe("closed");
-    act(() => void vi.advanceTimersByTime(400));
+    act(() => void vi.advanceTimersByTime(HOVER_OPEN_DELAY));
     expect(state()).toBe("open");
   });
 
@@ -231,18 +244,20 @@ describe("NotchApp toast under the collapsed pill", () => {
     await mount();
     act(() => toast("Relógio parado", { undo: () => {} }));
     fireEvent.pointerEnter(document.querySelector("[data-hit=toast]") as HTMLElement);
-    act(() => hover(true));
+    hoverIn();
     act(() => void vi.advanceTimersByTime(200));
     expect(state()).toBe("closed");
     fireEvent.pointerLeave(document.querySelector("[data-hit=toast]") as HTMLElement);
     fireEvent.pointerEnter(document.querySelector("[data-hit=surface]") as HTMLElement);
+    expect(state()).toBe("closed");
+    act(() => void vi.advanceTimersByTime(HOVER_OPEN_DELAY));
     expect(state()).toBe("open");
   });
 
   it("with an undo toast, hovering the pill still opens", async () => {
     await mount();
     act(() => toast("Relógio parado", { undo: () => {} }));
-    act(() => hover(true));
+    hoverIn();
     act(() => void vi.advanceTimersByTime(100));
     expect(state()).toBe("open");
   });
@@ -300,7 +315,7 @@ describe("NotchApp hit rect", () => {
   it("pill when collapsed, panel when open, pill again after closing", async () => {
     await mount();
     expect(last()).toEqual({ x: 30, y: 0, w: 460, h: 38 });
-    act(() => hover(true));
+    hoverIn();
     expect(last()).toEqual({ x: 40, y: 0, w: 440, h: 500 });
     act(() => hover(false));
     act(() => void vi.advanceTimersByTime(460));
@@ -362,3 +377,10 @@ describe("NotchApp language", () => {
     expect(document.querySelector("[data-coach]")?.textContent).not.toContain("⌥");
   });
 });
+
+function hoverIn() {
+  act(() => hover(true));
+  act(() => {
+    vi.advanceTimersByTime(HOVER_OPEN_DELAY);
+  });
+}

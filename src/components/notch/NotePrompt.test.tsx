@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 
 vi.mock("../../lib/api", async () => (await import("./fixtures")).apiMock());
 
@@ -10,7 +10,7 @@ import { useNotePrompt } from "../../stores/notePrompt";
 import { useToasts } from "../../stores/toast";
 import { useTracker } from "../../stores/tracker";
 import { snapshot } from "./fixtures";
-import { NotchApp } from "./NotchApp";
+import { HOVER_OPEN_DELAY, NotchApp } from "./NotchApp";
 import { resetFocusRequests } from "./keyboard";
 
 const flush = () => act(async () => {});
@@ -34,7 +34,7 @@ async function mount(snap: TrackerSnapshot = snapshot()) {
 
 async function openAndStop(closed: ClosedEntry | null) {
   vi.mocked(api.stopClock).mockResolvedValue(closed as never);
-  act(() => hover(true));
+  hoverIn();
   await act(async () => fireEvent.click(screen.getByRole("button", { name: "Parar e encerrar" })));
 }
 
@@ -106,6 +106,7 @@ describe("note prompt after stop/pause", () => {
     await mount();
     await openAndStop(block(0.9));
     expect(screen.queryByText("O que você fez?")).toBeNull();
+    cleanup();
     await mount();
     await openAndStop(null);
     expect(screen.queryByText("O que você fez?")).toBeNull();
@@ -114,14 +115,14 @@ describe("note prompt after stop/pause", () => {
   it("is offered after Pausar too", async () => {
     vi.mocked(api.pauseClock).mockResolvedValue(block(10) as never);
     await mount();
-    act(() => hover(true));
+    hoverIn();
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "Pausar (espaço)" })));
     expect(screen.getByText("O que você fez?")).toBeTruthy();
   });
 
   it("is not offered when switching projects", async () => {
     await mount();
-    act(() => hover(true));
+    hoverIn();
     await act(async () => fireEvent.click(screen.getByText("Migração SAP")));
     expect(api.switchProject).toHaveBeenCalled();
     expect(screen.queryByText("O que você fez?")).toBeNull();
@@ -172,7 +173,7 @@ describe("note prompt after stop/pause", () => {
     act(() => hover(false));
     act(() => void vi.advanceTimersByTime(500));
     expect(state()).toBe("closed");
-    act(() => hover(true));
+    hoverIn();
     act(() => void vi.advanceTimersByTime(100)); // undo-toast hover grace
     await flush();
     expect(state()).toBe("open");
@@ -194,3 +195,10 @@ describe("note prompt after stop/pause", () => {
     expect(useToasts.getState().current?.message).toBe("Erro ao acessar os dados: disco cheio");
   });
 });
+
+function hoverIn() {
+  act(() => hover(true));
+  act(() => {
+    vi.advanceTimersByTime(HOVER_OPEN_DELAY);
+  });
+}
