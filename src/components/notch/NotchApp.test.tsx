@@ -7,7 +7,7 @@ import * as api from "../../lib/api";
 import type { OverlayConfig, TrackerSnapshot } from "../../lib/types";
 import { useTracker } from "../../stores/tracker";
 import { snapshot } from "./fixtures";
-import { HOVER_OPEN_DELAY, NotchApp } from "./NotchApp";
+import { HOVER_FALLBACK_MS, NotchApp } from "./NotchApp";
 import { resetFocusRequests } from "./keyboard";
 import { toast, useToasts } from "../../stores/toast";
 import { setLang } from "../../i18n";
@@ -16,6 +16,8 @@ const notch: OverlayConfig = { mode: "notch", notchWidth: 220, notchHeight: 38, 
 const strip: OverlayConfig = { mode: "strip", notchWidth: null, notchHeight: null, pillWidth: 160, pillHeight: 6 };
 
 let hover: (h: boolean) => void;
+let restCb: () => void;
+const rest = () => act(() => restCb());
 let expandedCb: (e: { expanded: boolean; focus: boolean }) => void;
 /** Tray / shortcut open (user-initiated, focus) or collapse. */
 const expanded = (e: boolean, focus = e) => expandedCb({ expanded: e, focus });
@@ -39,6 +41,7 @@ describe("NotchApp", () => {
     act(() => useToasts.getState().dismiss());
     useTracker.setState({ snapshot: null, snapAt: 0, now: 0 });
     vi.mocked(api.onOverlayHover).mockImplementation(async (cb) => ((hover = cb), () => {}));
+    vi.mocked(api.onOverlayRest).mockImplementation(async (cb) => ((restCb = cb), () => {}));
     vi.mocked(api.onOverlayExpanded).mockImplementation(async (cb) => ((expandedCb = cb), () => {}));
     vi.mocked(api.onChanged).mockImplementation(async (cb) => ((changed = cb), () => {}));
     vi.mocked(api.onOverlayFocusSearch).mockImplementation(async (cb) => ((focusSearch = cb), () => {}));
@@ -188,20 +191,34 @@ describe("NotchApp", () => {
     expect(state()).toBe("open");
   });
 
-  it("waits for the hover to rest before opening; leaving early cancels", async () => {
+  it("hover without rest stays closed; rest opens", async () => {
     await mount();
     act(() => hover(true));
-    act(() => void vi.advanceTimersByTime(HOVER_OPEN_DELAY - 50));
-    expect(state()).toBe("closed");
-    act(() => hover(false));
     act(() => void vi.advanceTimersByTime(1000));
     expect(state()).toBe("closed");
-    act(() => hover(true));
-    act(() => void vi.advanceTimersByTime(HOVER_OPEN_DELAY));
+    rest();
     expect(state()).toBe("open");
   });
 
-  it("strip mode: thin bar grows to the pill on hover, then opens", async () => {
+  it("opens by fallback at 1500 ms when the cursor keeps drifting inside", async () => {
+    await mount();
+    act(() => hover(true));
+    act(() => void vi.advanceTimersByTime(HOVER_FALLBACK_MS - 50));
+    expect(state()).toBe("closed");
+    act(() => void vi.advanceTimersByTime(100));
+    expect(state()).toBe("open");
+  });
+
+  it("leaving before rest cancels the open, including the fallback", async () => {
+    await mount();
+    act(() => hover(true));
+    act(() => hover(false));
+    rest();
+    act(() => void vi.advanceTimersByTime(HOVER_FALLBACK_MS * 2));
+    expect(state()).toBe("closed");
+  });
+
+  it("strip mode: thin bar grows to the pill on hover, opens only on rest", async () => {
     await mount(strip);
     const bar = document.querySelector("[data-pill=strip]") as HTMLElement;
     expect(bar).toBeTruthy();
@@ -209,7 +226,9 @@ describe("NotchApp", () => {
     expect(document.querySelector("[data-pill=strip]")).toBeNull();
     expect(screen.getByText("Portal B2B")).toBeTruthy();
     expect(state()).toBe("closed");
-    act(() => void vi.advanceTimersByTime(HOVER_OPEN_DELAY));
+    act(() => void vi.advanceTimersByTime(1000));
+    expect(state()).toBe("closed");
+    rest();
     expect(state()).toBe("open");
   });
 
@@ -233,6 +252,7 @@ describe("NotchApp toast under the collapsed pill", () => {
     resetFocusRequests();
     useTracker.setState({ snapshot: null, snapAt: 0, now: 0 });
     vi.mocked(api.onOverlayHover).mockImplementation(async (cb) => ((hover = cb), () => {}));
+    vi.mocked(api.onOverlayRest).mockImplementation(async (cb) => ((restCb = cb), () => {}));
     vi.useFakeTimers({ shouldAdvanceTime: true });
   });
   afterEach(() => {
@@ -250,7 +270,8 @@ describe("NotchApp toast under the collapsed pill", () => {
     fireEvent.pointerLeave(document.querySelector("[data-hit=toast]") as HTMLElement);
     fireEvent.pointerEnter(document.querySelector("[data-hit=surface]") as HTMLElement);
     expect(state()).toBe("closed");
-    act(() => void vi.advanceTimersByTime(HOVER_OPEN_DELAY));
+    // The rest already fired over the toast and was ignored; the slow fallback still applies.
+    act(() => void vi.advanceTimersByTime(HOVER_FALLBACK_MS));
     expect(state()).toBe("open");
   });
 
@@ -295,6 +316,7 @@ describe("NotchApp hit rect", () => {
     resetFocusRequests();
     useTracker.setState({ snapshot: null, snapAt: 0, now: 0 });
     vi.mocked(api.onOverlayHover).mockImplementation(async (cb) => ((hover = cb), () => {}));
+    vi.mocked(api.onOverlayRest).mockImplementation(async (cb) => ((restCb = cb), () => {}));
     vi.useFakeTimers({ shouldAdvanceTime: true });
     for (const [k, f] of Object.entries(props)) {
       descs[k] = Object.getOwnPropertyDescriptor(HTMLElement.prototype, k);
@@ -381,6 +403,6 @@ describe("NotchApp language", () => {
 function hoverIn() {
   act(() => hover(true));
   act(() => {
-    vi.advanceTimersByTime(HOVER_OPEN_DELAY);
   });
+  rest();
 }

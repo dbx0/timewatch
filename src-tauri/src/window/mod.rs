@@ -2,7 +2,7 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
@@ -10,6 +10,8 @@ use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 use crate::commands::{current_lang, AppState};
 use crate::i18n::{fill, Lang};
 use crate::platform::{self, NotchInfo};
+
+pub mod intent;
 
 pub const OVERLAY_LABEL: &str = "notch";
 /// Fixed overlay window size, logical px.
@@ -263,6 +265,8 @@ pub fn focus_overlay(app: &AppHandle) {
 
 /// Click-through: the window ignores the cursor except over the frontend's hit rect.
 fn start_hover_poll(app: AppHandle) {
+    let t0 = Instant::now();
+    let mut rest = intent::RestDetector::new();
     std::thread::spawn(move || loop {
         std::thread::sleep(HOVER_POLL);
         let (Some(state), Some(win)) = (app.try_state::<OverlayState>(), app.get_webview_window(OVERLAY_LABEL))
@@ -278,6 +282,15 @@ fn start_hover_poll(app: AppHandle) {
         if state.hovering.swap(inside, Ordering::SeqCst) != inside {
             platform::set_ignore_cursor_events(&win, !inside);
             let _ = app.emit("overlay://hover", inside);
+        }
+        if inside {
+            // Logical px, so the rest radius means the same on every display.
+            let (x, y) = (c.x / cursor_scale, c.y / cursor_scale);
+            if rest.sample(x, y, t0.elapsed().as_millis() as u64) {
+                let _ = app.emit("overlay://rest", ());
+            }
+        } else {
+            rest.reset();
         }
     });
 }

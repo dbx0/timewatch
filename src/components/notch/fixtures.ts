@@ -56,6 +56,7 @@ export function apiMock() {
     onChanged: listen(),
     onTick: listen(),
     onOverlayHover: listen(),
+    onOverlayRest: listen(),
     onOverlayExpanded: listen(),
     onOverlayConfig: listen(),
     onOverlayFocusSearch: listen(),

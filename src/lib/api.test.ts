@@ -114,19 +114,24 @@ describe("api", () => {
     const config = vi.fn();
     const focus = vi.fn();
     await api.onOverlayHover(hover);
+    const rest = vi.fn();
+    await api.onOverlayRest(rest);
     await api.onOverlayExpanded(expanded);
     await api.onOverlayConfig(config);
     await api.onOverlayFocusSearch(focus);
     expect(listen.mock.calls.map((c) => c[0])).toEqual([
       "overlay://hover",
+      "overlay://rest",
       "overlay://expanded",
       "overlay://config",
       "overlay://focus-search",
     ]);
     listen.mock.calls[0][1]({ payload: true });
-    listen.mock.calls[1][1]({ payload: { expanded: false, focus: false } });
-    listen.mock.calls[2][1]({ payload: { mode: "notch", notchWidth: 185, notchHeight: 32, pillWidth: 425, pillHeight: 32 } });
-    listen.mock.calls[3][1]({ payload: null });
+    listen.mock.calls[2][1]({ payload: { expanded: false, focus: false } });
+    listen.mock.calls[3][1]({ payload: { mode: "notch", notchWidth: 185, notchHeight: 32, pillWidth: 425, pillHeight: 32 } });
+    listen.mock.calls[4][1]({ payload: null });
+    listen.mock.calls[1][1]({ payload: null });
+    expect(rest).toHaveBeenCalledTimes(1);
     expect(hover).toHaveBeenCalledWith(true);
     expect(expanded).toHaveBeenCalledWith({ expanded: false, focus: false });
     expect(config).toHaveBeenCalledWith({ mode: "notch", notchWidth: 185, notchHeight: 32, pillWidth: 425, pillHeight: 32 });

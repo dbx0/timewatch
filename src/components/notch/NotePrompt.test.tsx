@@ -10,12 +10,13 @@ import { useNotePrompt } from "../../stores/notePrompt";
 import { useToasts } from "../../stores/toast";
 import { useTracker } from "../../stores/tracker";
 import { snapshot } from "./fixtures";
-import { HOVER_OPEN_DELAY, NotchApp } from "./NotchApp";
+import { NotchApp } from "./NotchApp";
 import { resetFocusRequests } from "./keyboard";
 
 const flush = () => act(async () => {});
 const state = () => document.querySelector("[data-view=notch]")?.getAttribute("data-state");
 let hover: (h: boolean) => void;
+let restCb: () => void;
 let focusSearch: () => void;
 
 const block = (min: number): ClosedEntry => ({
@@ -46,6 +47,7 @@ describe("note prompt after stop/pause", () => {
     act(() => useNotePrompt.getState().clear());
     useTracker.setState({ snapshot: null, snapAt: 0, now: 0 });
     vi.mocked(api.onOverlayHover).mockImplementation(async (cb) => ((hover = cb), () => {}));
+    vi.mocked(api.onOverlayRest).mockImplementation(async (cb) => ((restCb = cb), () => {}));
     vi.mocked(api.onOverlayFocusSearch).mockImplementation(async (cb) => ((focusSearch = cb), () => {}));
     vi.useFakeTimers({ shouldAdvanceTime: true });
   });
@@ -198,7 +200,5 @@ describe("note prompt after stop/pause", () => {
 
 function hoverIn() {
   act(() => hover(true));
-  act(() => {
-    vi.advanceTimersByTime(HOVER_OPEN_DELAY);
-  });
+  act(() => restCb());
 }

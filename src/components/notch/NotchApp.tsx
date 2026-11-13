@@ -23,13 +23,12 @@ export const COACH_MS = 7000;
 /** Unpinned panel closes this long after the cursor leaves. */
 export const CLOSE_DELAY = 450;
 /**
- * Hover must rest on the pill this long before the panel opens, so passing the cursor over the
- * top of the screen never pops it open. A click on the pill opens it right away. In strip mode the
- * bar grows into the pill immediately and the panel follows after this delay.
+ * The panel opens when the backend reports the cursor came to rest on the pill (`overlay://rest`),
+ * so passing over the top of the screen never pops it open. If the cursor stays inside but keeps
+ * drifting, open anyway after this long. A click on the pill opens it right away. In strip mode the
+ * bar grows into the pill immediately on hover (feedback only).
  */
-export const HOVER_OPEN_DELAY = 700;
-/** @deprecated kept for tests/imports; strip mode now uses HOVER_OPEN_DELAY. */
-export const STRIP_OPEN_DELAY = HOVER_OPEN_DELAY;
+export const HOVER_FALLBACK_MS = 1500;
 /** With an undo toast under the collapsed pill, wait this long to see if the pointer is on the toast. */
 export const TOAST_HOVER_GRACE = 80;
 const PANEL_W = 440;
@@ -116,24 +115,21 @@ export function NotchApp() {
   }, [setOpen]);
 
   /**
-   * Cursor entered the hit rect while collapsed. `onPill` is true when the DOM saw the pointer on
-   * the pill itself; otherwise, with an undo toast showing, wait briefly: hovering the toast must
-   * not open the panel (the toast would jump away).
+   * Cursor entered the hit rect while collapsed: grow the strip and arm the slow-drift fallback.
+   * The panel itself opens on `overlay://rest`, or on the pill's own pointer events.
    */
-  const hoverOpen = useCallback(
-    (onPill: boolean) => {
-      const strip = configRef.current.mode === "strip";
-      if (strip) setGrown(true);
-      // The toast grace is shorter than the hover delay, so the rest check below covers both.
-      void onPill;
-      const delay = Math.max(HOVER_OPEN_DELAY, TOAST_HOVER_GRACE);
-      clearTimeout(growTimer.current);
-      growTimer.current = setTimeout(() => {
-        if (hoveringRef.current && !overToastRef.current) openPanel(false);
-      }, delay);
-    },
-    [openPanel],
-  );
+  const hoverOpen = useCallback(() => {
+    if (configRef.current.mode === "strip") setGrown(true);
+    clearTimeout(growTimer.current);
+    growTimer.current = setTimeout(() => {
+      if (hoveringRef.current && !overToastRef.current) openPanel(false);
+    }, HOVER_FALLBACK_MS);
+  }, [openPanel]);
+
+  /** The cursor stopped on the pill. Never opens while the pointer is on the undo toast. */
+  const onRest = useCallback(() => {
+    if (hoveringRef.current && !openRef.current && !overToastRef.current) openPanel(false);
+  }, [openPanel]);
 
   const onHover = useCallback(
     (h: boolean) => {
@@ -142,7 +138,7 @@ export function NotchApp() {
         clearTimeout(coachTimer.current);
         setCoach(false);
         clearTimeout(closeTimer.current);
-        if (!openRef.current) hoverOpen(false);
+        if (!openRef.current) hoverOpen();
         return;
       }
       clearTimeout(growTimer.current);
@@ -179,6 +175,7 @@ export function NotchApp() {
         coachTimer.current = setTimeout(() => setCoach(false), COACH_MS);
       }),
       api.onOverlayHover(onHover),
+      api.onOverlayRest(onRest),
       api.onOverlayExpanded(({ expanded, focus }) => {
         // Only user-initiated opens (tray, shortcut) pin and take the keyboard; a system open
         // (absence question) must never steal focus from what the user is typing.
@@ -328,7 +325,7 @@ export function NotchApp() {
         ref={surfaceRef}
         data-hit="surface"
         onPointerEnter={() => {
-          if (!openRef.current && hoveringRef.current) hoverOpen(true);
+          if (!openRef.current && hoveringRef.current) hoverOpen();
         }}
       >
         {open ? (

@@ -38,6 +38,7 @@ Primeira execução: `finish_onboarding`, `skip_onboarding`.
 - `settings://language` (`"pt-BR" | "en" | "es"`): o idioma resolvido mudou; a bandeja e os títulos das janelas já foram atualizados
 - `overlay://config`: posição, tamanho e modo (notch ou faixa) do overlay
 - `overlay://hover` (bool): cursor entrou ou saiu do retângulo interativo
+- `overlay://rest` (sem payload): o cursor parou sobre o retângulo interativo (raio de 4 px lógicos por 180 ms, após 120 ms dentro; no máximo uma vez por visita). É o que abre o painel; passar o mouse por cima não abre
 - `overlay://expanded` (bool): painel aberto ou fechado
 - `overlay://focus-search`: foca o campo de busca
 - `overlay://coach`: dica de primeiro uso após o onboarding

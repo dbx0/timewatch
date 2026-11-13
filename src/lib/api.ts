@@ -91,6 +91,8 @@ export const onTick = (cb: (now: Ms) => void): Promise<UnlistenFn> =>
 
 export const onOverlayHover = (cb: (hover: boolean) => void): Promise<UnlistenFn> =>
   listen<boolean>("overlay://hover", (e) => cb(e.payload));
+/** The cursor came to rest on the pill (hover intent), as opposed to passing over it. */
+export const onOverlayRest = (cb: () => void): Promise<UnlistenFn> => listen("overlay://rest", () => cb());
 /** `focus` is true only for user-initiated opens (tray, shortcut); system opens never take the keyboard. */
 export type OverlayExpanded = { expanded: boolean; focus: boolean };
 export const onOverlayExpanded = (cb: (e: OverlayExpanded) => void): Promise<UnlistenFn> =>
