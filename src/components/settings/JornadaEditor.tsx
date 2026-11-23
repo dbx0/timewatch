@@ -1,17 +1,22 @@
 import { useT } from "../../i18n";
+import { weekOrder } from "../../lib/dates";
 import { decimalSep } from "../../lib/format";
+import type { WeekStart } from "../../lib/types";
 import { Button } from "../ui/Button";
 import { Stepper } from "../ui/Stepper";
 
 interface Props {
+  /** Mon..Sun, whatever the display order. */
   value: number[];
+  /** Display order; Monday first when omitted (onboarding). */
+  weekStart?: WeekStart;
   onChange: (next: number[]) => void;
 }
 
 const fmt = (v: number) => String(v).replace(".", decimalSep());
 
 /** Seven daily-target steppers (Mon..Sun) plus Mon-Fri presets. Reused by onboarding. */
-export function JornadaEditor({ value, onChange }: Props) {
+export function JornadaEditor({ value, weekStart, onChange }: Props) {
   const L = useT();
   const preset = (h: number) => onChange([h, h, h, h, h, 0, 0]);
   return (
@@ -23,9 +28,9 @@ export function JornadaEditor({ value, onChange }: Props) {
       </div>
       {/* 4 + 3 regular grid: fits the 640px onboarding and the 780px settings windows. */}
       <div data-testid="jornada-days" className="mt-3 grid max-w-[520px] grid-cols-4 gap-2">
-        {L.weekdaysShort.map((d, i) => (
-          <div key={d} data-testid="jornada-day" className="min-w-0 rounded-xl bg-raise p-2 text-center">
-            <div className="mb-1.5 text-xs text-mute">{d}</div>
+        {weekOrder(weekStart).map((i) => (
+          <div key={i} data-testid="jornada-day" className="min-w-0 rounded-xl bg-raise p-2 text-center">
+            <div className="mb-1.5 text-xs text-mute">{L.weekdaysShort[i]}</div>
             <Stepper
               compact
               ariaLabel={L.report.weekdaysLong[i]}

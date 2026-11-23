@@ -1,4 +1,4 @@
-use chrono::TimeZone;
+use chrono::{Datelike, TimeZone};
 
 use crate::domain::calc::{Cell, DayCalc, Grouping, RowKind, WeekReport};
 use crate::domain::Project;
@@ -100,10 +100,10 @@ pub fn html_report<Tz: TimeZone>(
         Grouping::Client => t.col_client,
     };
     h.push_str(&format!("<th>{}</th>", esc(first)));
-    for (i, d) in report.days.iter().enumerate() {
+    for d in &report.days {
         h.push_str(&format!(
             "<th>{} {}</th>",
-            t.day_names[i],
+            t.day_names[d.weekday().num_days_from_monday() as usize],
             d.format(t.short_date_fmt)
         ));
     }
@@ -259,6 +259,27 @@ mod tests {
         let ws = NaiveDate::from_ymd_opt(2026, 11, 9).unwrap();
         let r = tr.week_report(&tz(), ws, now, Grouping::Project).unwrap();
         (tr, r)
+    }
+
+    #[test]
+    fn html_day_headers_follow_a_saturday_week() {
+        let (tr, _) = report("Acme", "Alpha");
+        let sat = NaiveDate::from_ymd_opt(2026, 11, 7).unwrap();
+        let r = tr
+            .week_report(
+                &tz(),
+                sat,
+                sat.and_hms_opt(12, 0, 0)
+                    .unwrap()
+                    .and_utc()
+                    .timestamp_millis(),
+                Grouping::Project,
+            )
+            .unwrap();
+        let out = html_report(&r, None, &tz(), Lang::En);
+        let sat_at = out.find("<th>Sat ").expect("saturday header");
+        let mon_at = out.find("<th>Mon ").expect("monday header");
+        assert!(sat_at < mon_at);
     }
 
     #[test]

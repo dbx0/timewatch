@@ -147,6 +147,14 @@ describe("ReportApp", () => {
     expect(screen.getByText("Esta semana")).toBeTruthy();
   });
 
+  it("asks for the week starting on Saturday when that is the setting", async () => {
+    vi.useFakeTimers({ now: new Date(2026, 10, 18, 10), toFake: ["Date"] });
+    vi.mocked(api.getSettings).mockResolvedValue({ ...settings, weekStart: "saturday" });
+    await mount();
+    expect(vi.mocked(api.getWeek).mock.calls.map((c) => c[0])).toEqual(["2026-11-14"]);
+    vi.useRealTimers();
+  });
+
   it("refetches on changed and on a 15 s tick", async () => {
     await mount();
     const n = vi.mocked(api.getWeek).mock.calls.length;

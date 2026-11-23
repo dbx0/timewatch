@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useT } from "../../i18n";
+import { weekOrder } from "../../lib/dates";
 import { dayLabel } from "../../lib/format";
+import type { WeekStart } from "../../lib/types";
 
 interface Props {
   /** "YYYY-MM" */
@@ -9,18 +11,21 @@ interface Props {
   selected: string[];
   onToggle: (day: string) => void;
   onMonthChange?: (month: string) => void;
+  /** First column; Monday when omitted. */
+  weekStart?: WeekStart;
 }
 
 const pad = (n: number) => String(n).padStart(2, "0");
 
-export function Calendar({ month, selected, onToggle, onMonthChange }: Props) {
+export function Calendar({ month, selected, onToggle, onMonthChange, weekStart }: Props) {
   const L = useT();
   const [shown, setShown] = useState(month);
   useEffect(() => setShown(month), [month]);
 
   const [y, mo] = shown.split("-").map(Number);
   const daysInMonth = new Date(y, mo, 0).getDate();
-  const lead = (new Date(y, mo - 1, 1).getDay() + 6) % 7; // Monday first
+  const order = weekOrder(weekStart);
+  const lead = order.indexOf((new Date(y, mo - 1, 1).getDay() + 6) % 7);
 
   const go = (delta: number) => {
     const d = new Date(y, mo - 1 + delta, 1);
@@ -41,8 +46,8 @@ export function Calendar({ month, selected, onToggle, onMonthChange }: Props) {
         <button type="button" aria-label={L.ui.nextMonth} onClick={() => go(1)} className={navBtn}>›</button>
       </div>
       <div className="grid grid-cols-7 gap-0.5 text-center text-xs">
-        {L.weekdaysInitial.map((w, i) => (
-          <div key={i} className="py-1 text-dim">{w}</div>
+        {order.map((i) => (
+          <div key={i} className="py-1 text-dim">{L.weekdaysInitial[i]}</div>
         ))}
         {Array.from({ length: lead }, (_, i) => <div key={`b${i}`} />)}
         {Array.from({ length: daysInMonth }, (_, i) => {

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import * as api from "../../lib/api";
-import { addDays, errMsg, mondayOf, toIso } from "../../lib/dates";
+import { addDays, errMsg, toIso, weekdayIndex } from "../../lib/dates";
 import { dayLabel, dec, weekdayShort } from "../../lib/format";
 import { useT, getT } from "../../i18n";
 import { clientLabel } from "../../lib/client";
@@ -14,6 +14,8 @@ import { ExportMenu } from "./ExportMenu";
 
 interface Props {
   weekStart: IsoDate;
+  /** First day of the current week. */
+  thisWeek: IsoDate;
   grouping: Grouping;
   today: IsoDate;
   reloadKey: number;
@@ -32,7 +34,7 @@ async function copy(value: string) {
   }
 }
 
-export function WeekView({ weekStart, grouping, today, reloadKey, onWeekChange, onGroupingChange, onOpenDay }: Props) {
+export function WeekView({ weekStart, thisWeek, grouping, today, reloadKey, onWeekChange, onGroupingChange, onOpenDay }: Props) {
   const t = useT().report;
   const [report, setReport] = useState<WeekReport | null>(null);
   const seq = useRef(0);
@@ -47,7 +49,7 @@ export function WeekView({ weekStart, grouping, today, reloadKey, onWeekChange, 
 
   useEffect(load, [load, reloadKey]);
 
-  const isThisWeek = weekStart === mondayOf(today);
+  const isThisWeek = weekStart === thisWeek;
   const days = report?.days ?? Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
 
   const num = (cell: Cell, i: number, opts: { extra?: boolean } = {}) => {
@@ -80,7 +82,7 @@ export function WeekView({ weekStart, grouping, today, reloadKey, onWeekChange, 
           </b>
           <NavButton label={t.nextWeek} onClick={() => onWeekChange(addDays(weekStart, 7))}>›</NavButton>
           {!isThisWeek && (
-            <Button size="sm" variant="ghost" onClick={() => onWeekChange(mondayOf(toIso(new Date())))}>
+            <Button size="sm" variant="ghost" onClick={() => onWeekChange(toIso(new Date()))}>
               {t.thisWeek}
             </Button>
           )}
@@ -121,7 +123,7 @@ export function WeekView({ weekStart, grouping, today, reloadKey, onWeekChange, 
                         onClick={() => onOpenDay(d)}
                         className={`inline-flex cursor-pointer flex-col items-center rounded-[10px] px-2.5 py-1.5 text-mute outline-none hover:bg-raise2 hover:text-text focus-visible:ring-2 focus-visible:ring-accent2`}
                       >
-                        {weekdayShort(i)}
+                        {weekdayShort(weekdayIndex(d))}
                         <b className={`text-base font-semibold ${d === today ? "text-accent" : "text-text"}`}>{Number(d.slice(8))}</b>
                         {report.holidays[i] && <span className="text-[10px] text-accent2">{t.holiday}</span>}
                       </button>

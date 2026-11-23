@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import * as api from "../../lib/api";
-import { mondayOf, toIso } from "../../lib/dates";
-import type { Grouping, IsoDate } from "../../lib/types";
+import { toIso, weekStartOf } from "../../lib/dates";
+import type { Grouping, IsoDate, WeekStart } from "../../lib/types";
 import { ToastHost } from "../ui/Toast";
 import { DayView } from "./DayView";
 import { WeekView } from "./WeekView";
@@ -13,7 +13,11 @@ type View = { kind: "week" } | { kind: "day"; day: IsoDate };
 export function ReportApp() {
   const [now, setNow] = useState(() => Date.now());
   const today = toIso(new Date(now));
-  const [weekStart, setWeekStart] = useState<IsoDate>(() => mondayOf(toIso(new Date())));
+  /** Any day of the shown week; the week itself follows the `weekStart` setting. */
+  const [anchor, setAnchor] = useState<IsoDate>(() => toIso(new Date()));
+  /** `null` until the setting loads, so the week is not fetched twice. */
+  const [startPref, setStartPref] = useState<WeekStart | null>(null);
+  const weekStart = weekStartOf(anchor, startPref ?? "monday");
   const [grouping, setGrouping] = useState<Grouping>("project");
   const [view, setView] = useState<View>({ kind: "week" });
   const [reloadKey, setReloadKey] = useState(0);
@@ -22,9 +26,16 @@ export function ReportApp() {
   useEffect(() => {
     let off = false;
     const unlisten: (() => void)[] = [];
+    const loadPref = () =>
+      Promise.resolve(api.getSettings()).then(
+        (s) => !off && setStartPref(s?.weekStart ?? "monday"),
+        () => !off && setStartPref((p) => p ?? "monday"),
+      );
+    void loadPref();
     const reload = () => {
       lastRefresh.current = Date.now();
       setReloadKey((k) => k + 1);
+      void loadPref();
     };
     void api.onChanged(reload).then((u) => (off ? u() : unlisten.push(u)));
     void api
@@ -45,12 +56,13 @@ export function ReportApp() {
   return (
     <div data-view="report" className="mx-auto min-h-full max-w-[1040px] px-8 py-6">
       {view.kind === "week" ? (
-        <WeekView
+        startPref && <WeekView
           weekStart={weekStart}
+          thisWeek={weekStartOf(today, startPref)}
           grouping={grouping}
           today={today}
           reloadKey={reloadKey}
-          onWeekChange={setWeekStart}
+          onWeekChange={setAnchor}
           onGroupingChange={setGrouping}
           onOpenDay={(day) => setView({ kind: "day", day })}
         />
@@ -63,7 +75,7 @@ export function ReportApp() {
           reloadKey={reloadKey}
           onDayChange={(day) => setView({ kind: "day", day })}
           onBack={() => {
-            setWeekStart(mondayOf(view.day));
+            setAnchor(view.day);
             setView({ kind: "week" });
           }}
         />

@@ -4,11 +4,14 @@ import { dayLabel } from "../../lib/format";
 import { toIso } from "../../lib/dates";
 import { Calendar } from "../ui/Calendar";
 import { Popover } from "../ui/Popover";
+import { Segmented } from "../ui/Segmented";
+import type { WeekStart } from "../../lib/types";
 import { JornadaEditor } from "./JornadaEditor";
 import { Row, type SectionProps } from "./Row";
 
 export function WorkdaySection({ settings, update }: SectionProps) {
-  const t = useT().settings;
+  const L = useT();
+  const t = L.settings;
   const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null);
   const [open, setOpen] = useState(false);
   const holidays = [...settings.holidays].sort();
@@ -19,8 +22,19 @@ export function WorkdaySection({ settings, update }: SectionProps) {
     <>
       <h3 className="mb-1 text-lg font-semibold">{t.workdayTitle}</h3>
       <div className="text-[13px] text-mute">{t.workdayHint}</div>
-      <JornadaEditor value={settings.jornadaH} onChange={(v) => update({ jornadaH: v })} />
+      <JornadaEditor weekStart={settings.weekStart} value={settings.jornadaH} onChange={(v) => update({ jornadaH: v })} />
       <div className="mt-3" />
+      <Row title={t.weekStart} hint={t.weekStartHint}>
+        <Segmented<WeekStart>
+          ariaLabel={t.weekStart}
+          value={settings.weekStart ?? "monday"}
+          options={[
+            { value: "monday", label: L.report.weekdaysLong[0] },
+            { value: "saturday", label: L.report.weekdaysLong[5] },
+          ]}
+          onChange={(v) => update({ weekStart: v })}
+        />
+      </Row>
       <Row title={t.holidays} hint={t.holidaysHint}>
         <button
           ref={setAnchor}
@@ -47,7 +61,7 @@ export function WorkdaySection({ settings, update }: SectionProps) {
         ))}
       </div>
       <Popover anchor={anchor} open={open} onClose={() => setOpen(false)}>
-        <Calendar month={toIso(new Date()).slice(0, 7)} selected={settings.holidays} onToggle={toggle} />
+        <Calendar month={toIso(new Date()).slice(0, 7)} weekStart={settings.weekStart} selected={settings.holidays} onToggle={toggle} />
       </Popover>
     </>
   );

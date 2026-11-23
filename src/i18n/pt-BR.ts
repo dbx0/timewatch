@@ -98,6 +98,8 @@ export const ptBR = {
     preset: (h: number) => `Seg–Sex ${h}h`,
     holidays: "Feriados",
     holidaysHint: "Dias marcados ficam com jornada 0.",
+    weekStart: "Semana começa",
+    weekStartHint: "Ordem dos dias no relatório, na exportação e nos calendários.",
     noHolidays: "nenhum",
     markDates: "Marcar datas",
     removeHoliday: (d: string) => `Remover feriado ${d}`,

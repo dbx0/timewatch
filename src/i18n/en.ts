@@ -100,6 +100,8 @@ export const en: Strings = {
     preset: (h: number) => `Mon–Fri ${h}h`,
     holidays: "Holidays",
     holidaysHint: "Marked days have a 0h workday.",
+    weekStart: "Week starts on",
+    weekStartHint: "Order of the days in the report, the export and the calendars.",
     noHolidays: "none",
     markDates: "Mark dates",
     removeHoliday: (d: string) => `Remove holiday ${d}`,

@@ -245,4 +245,12 @@ describe("Calendar", () => {
     expect(onToggle).toHaveBeenCalledWith("2026-11-20");
     expect(screen.getByRole("button", { name: "3 nov" }).getAttribute("aria-pressed")).toBe("true");
   });
+  it("starts the grid on Saturday when asked", () => {
+    const { container } = render(<Calendar month="2026-11" selected={[]} onToggle={() => {}} weekStart="saturday" />);
+    const cells = [...container.querySelectorAll(".grid > *")];
+    expect(cells.slice(0, 7).map((c) => c.textContent)).toEqual(["S", "D", "S", "T", "Q", "Q", "S"]);
+    // 2026-11-01 is a Sunday: one blank (Saturday) before it.
+    expect(cells[7].textContent).toBe("");
+    expect(cells[8].getAttribute("aria-label")).toBe("1 nov");
+  });
 });

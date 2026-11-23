@@ -1,4 +1,4 @@
-import type { IsoDate, Ms } from "./types";
+import type { IsoDate, Ms, WeekStart } from "./types";
 
 // Date-only math in local time; never converts through UTC.
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -25,6 +25,17 @@ export function weekdayIndex(day: IsoDate): number {
 
 export function mondayOf(day: IsoDate): IsoDate {
   return addDays(day, -weekdayIndex(day));
+}
+
+/** Monday-based weekday indexes (see `weekdayIndex`) in display order for `start`. */
+export function weekOrder(start: WeekStart | undefined): number[] {
+  const first = start === "saturday" ? 5 : 0;
+  return Array.from({ length: 7 }, (_, i) => (first + i) % 7);
+}
+
+/** First day of the week containing `day`. */
+export function weekStartOf(day: IsoDate, start: WeekStart | undefined): IsoDate {
+  return addDays(day, -weekOrder(start).indexOf(weekdayIndex(day)));
 }
 
 /** Epoch ms of local `HH:MM` on `day`. */

@@ -37,6 +37,7 @@ const base: Settings = {
   overlayMonitor: null,
   onboarded: true,
   language: "system",
+  weekStart: "monday",
 };
 const flush = () => act(async () => {});
 
@@ -66,6 +67,15 @@ describe("SettingsApp", () => {
     nav("Jornada e extras");
     fireEvent.click(screen.getByRole("button", { name: "Seg–Sex 6h" }));
     expect(api.setSettings).toHaveBeenCalledWith({ ...base, jornadaH: [6, 6, 6, 6, 6, 0, 0] });
+  });
+
+  it("week start segmented saves saturday and reorders the workday days", async () => {
+    await mount();
+    nav("Jornada e extras");
+    fireEvent.click(screen.getByText("Sábado"));
+    expect(api.setSettings).toHaveBeenCalledWith({ ...base, weekStart: "saturday" });
+    const days = screen.getAllByTestId("jornada-day").map((d) => d.firstElementChild?.textContent);
+    expect(days).toEqual(["Sáb", "Dom", "Seg", "Ter", "Qua", "Qui", "Sex"]);
   });
 
   it("lunch stepper + saves 75", async () => {

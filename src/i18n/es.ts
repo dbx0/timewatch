@@ -100,6 +100,8 @@ export const es: Strings = {
     preset: (h: number) => `Lun–Vie ${h}h`,
     holidays: "Feriados",
     holidaysHint: "Los días marcados tienen jornada 0.",
+    weekStart: "La semana empieza el",
+    weekStartHint: "Orden de los días en el informe, la exportación y los calendarios.",
     noHolidays: "ninguno",
     markDates: "Marcar fechas",
     removeHoliday: (d: string) => `Quitar feriado ${d}`,

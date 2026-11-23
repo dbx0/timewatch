@@ -103,6 +103,7 @@ const DEFAULT_SETTINGS: Settings = {
   overlayMonitor: null,
   onboarded: true,
   language: "system",
+  weekStart: "monday",
 };
 
 export const OVERLAY: OverlayConfig = { mode: "notch", notchWidth: 185, notchHeight: 32, pillWidth: 425, pillHeight: 32 };

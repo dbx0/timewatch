@@ -76,7 +76,11 @@ export interface Settings {
   onboarded: boolean;
   /** `system` follows the OS locale. */
   language: LanguagePref;
+  /** First day of the report week (missing in mocks means Monday). */
+  weekStart: WeekStart;
 }
+
+export type WeekStart = "monday" | "saturday";
 
 export type ClockStatus = "idle" | "running" | "paused";
 export type AbsenceReason = "idle" | "sleep";

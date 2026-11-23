@@ -25,6 +25,7 @@ const base: Settings = {
   overlayMonitor: null,
   onboarded: false,
   language: "system",
+  weekStart: "monday",
 };
 const flush = () => act(async () => {});
 const click = (name: string | RegExp) => fireEvent.click(screen.getByRole("button", { name }));

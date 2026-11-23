@@ -63,6 +63,18 @@ pub struct Settings {
     /// UI language; `system` follows the OS locale. Missing in data saved before it existed.
     #[serde(default)]
     pub language: LanguagePref,
+    /// First day of the report week. Missing in data saved before it existed.
+    #[serde(default)]
+    pub week_start: WeekStart,
+}
+
+/// First day of the week in the report and the exports.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum WeekStart {
+    #[default]
+    Monday,
+    Saturday,
 }
 
 impl Default for Settings {
@@ -80,6 +92,7 @@ impl Default for Settings {
             overlay_monitor: None,
             onboarded: false,
             language: LanguagePref::System,
+            week_start: WeekStart::Monday,
         }
     }
 }
@@ -108,6 +121,7 @@ mod tests {
         assert_eq!(s.lunch_min, 60);
         assert_eq!(s.lunch_ref, NaiveTime::from_hms_opt(12, 0, 0).unwrap());
         assert_eq!(s.idle_min, 15);
+        assert_eq!(s.week_start, WeekStart::Monday);
         assert!(!s.stop_on_sleep);
         assert!(s.autostart);
         assert_eq!(s.shortcut, DEFAULT_SHORTCUT);
@@ -138,5 +152,17 @@ mod tests {
         assert_eq!(s.jornada_ms(monday), 0);
         let sat = NaiveDate::from_ymd_opt(2026, 11, 14).unwrap();
         assert_eq!(s.jornada_ms(sat), 0);
+    }
+
+    #[test]
+    fn week_start_serializes_camel_case_and_defaults_when_missing() {
+        let mut v = serde_json::to_value(Settings::default()).unwrap();
+        assert_eq!(v["weekStart"], "monday");
+        v.as_object_mut().unwrap().remove("weekStart");
+        let s: Settings = serde_json::from_value(v.clone()).unwrap();
+        assert_eq!(s.week_start, WeekStart::Monday);
+        v["weekStart"] = "saturday".into();
+        let s: Settings = serde_json::from_value(v).unwrap();
+        assert_eq!(s.week_start, WeekStart::Saturday);
     }
 }
